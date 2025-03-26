@@ -6,50 +6,69 @@
 
 #include <dcmtk/dcmdata/dcuid.h>
 
-bool DicomAnonymizer::getDicomFilenames(const std::filesystem::path &study_directory) {
+bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_directory) {
 
-    // remove previous filenames when iterating over new study directory
-    if (!this->m_dicom_files.empty()) this->m_dicom_files.clear();
+    // remove previous filenames and series uids when iterating over new study directory
+    if (!m_dicom_files.empty()) m_dicom_files.clear();
+    if (!m_series_uids.empty()) m_series_uids.clear();
 
     for (const auto& entry: std::filesystem::recursive_directory_iterator(study_directory)) {
         if (entry.is_directory() || entry.path().filename() == "DICOMDIR") continue;
 
-        this->m_dicom_files.push_back(entry.path().string());
+        m_dicom_files.push_back(entry.path().string());
     }
 
-    if (this->m_dicom_files.empty()) return false;
+    if (m_dicom_files.empty()) {
+        fmt::print("No files found\n");
+        return false;
+    }
 
-    this->m_number_of_files = static_cast<unsigned int>(this->m_dicom_files.size());
-    fmt::print("Found {} files\n", m_number_of_files);
+    fmt::print("Found {} files\n", m_dicom_files.size());
     return true;
 }
 
-bool DicomAnonymizer::anonymizeStudy(const std::string &pseudoname, const char* root) {
+bool StudyAnonymizer::anonymizeStudy(const std::string &pseudoname, const char* root) {
 
     char newStudyUID[65];
     dcmGenerateUniqueIdentifier(newStudyUID, root);
 
-    OFCondition cond;
-    for (const auto& file : this->m_dicom_files) {
-        cond = m_fileformat.loadFile(file);
+    int fileNumber{0};
+    for (const auto& file : m_dicom_files) {
+        OFCondition cond = m_fileformat.loadFile(file.c_str());
         if (cond.bad()) {
             fmt::print("Unable to load file {}\n", file);
             fmt::print("Reason: {}\n", cond.text());
             return false;
         }
-        m_dataset = m_fileformat.getDataset();
 
+        m_dataset = m_fileformat.getDataset();
+        // for writing pre-post deidentification to text file
+        m_dataset->findAndGetOFString(DCM_PatientName, m_oldName);
+        m_dataset->findAndGetOFString(DCM_PatientID, m_oldID);
+
+        // TODO put it into array as part of DCM deidentification methods?
         m_dataset->putAndInsertOFStringArray(DCM_PatientName, pseudoname);
         m_dataset->putAndInsertOFStringArray(DCM_PatientID, pseudoname);
         m_dataset->putAndInsertOFStringArray(DCM_PatientAge, "000Y");
         m_dataset->putAndInsertOFStringArray(DCM_PatientSex, "O");
         m_dataset->putAndInsertOFStringArray(DCM_PatientAddress, "");
+        m_dataset->putAndInsertOFStringArray(DCM_AdditionalPatientHistory, "");
 
         //TODO remove institution, operator and relevant tags
+        m_dataset->putAndInsertOFStringArray(DCM_InstitutionName, "");
+        m_dataset->putAndInsertOFStringArray(DCM_InstitutionAddress, "");
+        m_dataset->putAndInsertOFStringArray(DCM_InstitutionalDepartmentName, "");
 
-        std::string oldSeriesUID{};
+        // erase operator, physician and other medical personel
+        m_dataset->putAndInsertOFStringArray(DCM_OperatorsName, "");
+        m_dataset->putAndInsertOFStringArray(DCM_ReferringPhysicianName, "");
+        m_dataset->putAndInsertOFStringArray(DCM_PerformingPhysicianName, "");
+        m_dataset->putAndInsertOFStringArray(DCM_NameOfPhysiciansReadingStudy, "");
+
+        OFString oldSeriesUID{};
         m_dataset->findAndGetOFString(DCM_SeriesInstanceUID, oldSeriesUID);
-        m_dataset->putAndInsertOFStringArray(DCM_SeriesInstanceUID, getSeriesUids(oldSeriesUID, root));
+        OFString newSeriesUID = this->getSeriesUids(oldSeriesUID, root);
+        m_dataset->putAndInsertOFStringArray(DCM_SeriesInstanceUID, newSeriesUID);
 
         char newSOPInstanceUID[65];
         dcmGenerateUniqueIdentifier(newSOPInstanceUID, root);
@@ -57,29 +76,89 @@ bool DicomAnonymizer::anonymizeStudy(const std::string &pseudoname, const char* 
 
         m_dataset->putAndInsertOFStringArray(DCM_StudyInstanceUID, newStudyUID);
 
-        cond = m_fileformat.saveFile(file);
+        if (!this->removeInvalidTags()) return false;
+
+        const E_TransferSyntax xfer = m_dataset->getCurrentXfer();
+        m_dataset->chooseRepresentation(xfer, nullptr);
+        m_fileformat.loadAllDataIntoMemory();
+
+        const std::string outputName = fmt::format("{:08X}", fileNumber);
+        const std::string outputPath = fmt::format("{}/{}", m_outputStudyDir, outputName);
+        cond = m_fileformat.saveFile(outputPath.c_str(), xfer);
+
         if (cond.bad()) {
             fmt::print("Unable to save file {}\n", file);
             fmt::print("Reason: {}\n", cond.text());
             return false;
         }
-
+        ++fileNumber;
     }
-
 
     return true;
 }
 
-std::string DicomAnonymizer::getSeriesUids(const std::string &old_series_uid, const char* root) {
+std::string StudyAnonymizer::getSeriesUids(const std::string &old_series_uid, const char* root) {
 
     // add old-new series uid map if there isn't one
     // otherwise return existing new uid
-    if (!this->m_series_uids.contains(old_series_uid)) {
+    if (!m_series_uids.contains(old_series_uid)) {
         char uid[65];
         dcmGenerateUniqueIdentifier(uid, root);
-        this->m_series_uids[old_series_uid] = std::string(uid);
-        return this->m_series_uids[old_series_uid];
+        m_series_uids[old_series_uid] = std::string(uid);
+        return m_series_uids[old_series_uid];
     }
 
-    return this->m_series_uids[old_series_uid];
+    return m_series_uids[old_series_uid];
 }
+
+bool StudyAnonymizer::removeInvalidTags() const {
+
+    // sanity check
+    if (m_dataset == nullptr) return false;
+
+    for (unsigned long i = 0; i < m_dataset->card(); ++i) {
+        const DcmElement *element = m_dataset->getElement(i);
+        DcmTag tag = element->getTag();
+        const DcmTagKey tagKey = DcmTagKey(element->getGTag(), element->getETag());
+        const std::string tagName = tag.getTagName();
+        if (tagName == "Unknown Tag & Data") {
+            m_dataset->remove(tagKey);
+            --i; // decrement due to ->remove reducing total number of tags
+        }
+    }
+
+    return true;
+}
+
+// void StudyAnonymizer::generateDicomDir(const std::string &dicomdir_path) {
+//     DicomDirInterface dicomdir;
+//
+//     OFString ap_profile{};
+//     m_fileformat.getDataset()->findAndGetOFString(DCM_RequestedMediaApplicationProfile, ap_profile);
+//
+//     dicomdir.
+//
+//     const std::string dicomdirName = fmt::format("{}/DICOMDIR", dicomdir_path);
+//     OFCondition status = dicomdir.createNewDicomDir(dicomdir.AP_Default, dicomdirName.c_str(), "");
+//
+//     for (const auto& file : std::filesystem::directory_iterator(m_out_study_directory)) {
+//         const std::string filepath = fmt::format("DATA/{}", file.path().stem().string());
+//         dicomdir.addDicomFile(filepath.c_str(), dicomdir_path.c_str());
+//     }
+//
+//
+// }
+
+// DicomDirInterface::E_ApplicationProfile
+// selectApplicationProfile(const char *modality) {
+//     if (modality == nullptr) return DicomDirInterface::AP_GeneralPurpose;
+//
+//     switch (modality) {
+//         case "CT":
+//             return DicomDirInterface::AP_CTandMR;
+//         case "MR":
+//             return DicomDirInterface::AP_CTandMR;
+//         default:
+//             return DicomDirInterface::AP_GeneralPurpose;
+//     }
+// }
