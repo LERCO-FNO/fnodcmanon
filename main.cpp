@@ -1,5 +1,6 @@
 #include <string>
 #include <filesystem>
+#include <set>
 
 #include "fmt/format.h"
 #include "fmt/os.h"
@@ -8,6 +9,7 @@
 #include "dcmtk/dcmdata/dctk.h"
 #include "dcmtk/dcmdata/cmdlnarg.h"
 #include "dcmtk/ofstd/ofconapp.h"
+#include "dcmtk/oflog/oflog.h"
 
 #include "DicomAnonymizer.hpp"
 
@@ -32,7 +34,7 @@ int main(int argc, char *argv[]) {
                                           OFFIS_DCMTK_VERSION,
                                           OFFIS_DCMTK_RELEASEDATE);
 
-    OFLogger mainLooger = OFLog::getLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION).c_str());
+    OFLogger mainLogger = OFLog::getLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION).c_str());
 
     OFConsoleApplication app(FNO_CONSOLE_APPLICATION, "DICOM anonymization tool", rcsid.c_str());
     OFCommandLine        cmd;
@@ -45,9 +47,10 @@ int main(int argc, char *argv[]) {
     const char *FNO_UID_ROOT{"1.2.840.113619.2"};
     const char *opt_outDirectory{"./anonymized_output"};
     const char *opt_rootUID{nullptr};
-    int         opt_anonymizationProfile{0};
     E_FILENAMES opt_filenameType = F_HEX;
     const char *opt_patientListFilename{"anonymized_patients.txt"};
+
+    std::set<E_ANONYM_METHODS> opt_anonymizationMethods{M_113100};
     //TODO implement this in future
     // bool        opt_generateDicomDir{false};
 
@@ -66,6 +69,12 @@ int main(int argc, char *argv[]) {
     OFLog::addOptions(cmd);
 
     cmd.addGroup("anonymization options:");
+    cmd.addOption("--anonym-method",
+                  "-m",
+                  1,
+                  "method: string",
+                  "add anonymization method to list (default DCM_113100");
+
     cmd.addOption("--fno-uid-root", "-fuid", fmt::format("use FNO UID root: {} (default)", FNO_UID_ROOT).c_str());
     cmd.addOption("--offis-uid-root", "-ouid", "use OFFIS UID root: " OFFIS_UID_ROOT);
     cmd.addOption("--custom-uid-root", "-cuid", 1, "uid root: string", "use custom UID root");
@@ -109,7 +118,8 @@ int main(int argc, char *argv[]) {
         } else if (cmd.findOption("--fno-uid-root") &&
             cmd.findOption("--custom-uid-root")) {
             checkConflict(app, "--fno-uid-root", "--custom-uid-root");
-        } else if (cmd.findOption("--offis-uid-root") && cmd.findOption("--custom-uid-root")) {
+        } else if (cmd.findOption("--offis-uid-root") &&
+            cmd.findOption("--custom-uid-root")) {
             checkConflict(app, "--offis-uid-root", "--custom-uid-root");
         }
 
@@ -136,19 +146,38 @@ int main(int argc, char *argv[]) {
         if (cmd.findOption("--filename-modality-sop")) opt_filenameType = F_MODALITY_SOPINSTUID;
         cmd.endOptionBlock();
 
+        if (cmd.findOption("--anonym-method", 0, OFCommandLine::FOM_FirstFromLeft)) {
+            do {
+                const char *method{nullptr};
+                app.checkValue(cmd.getValue(method));
+                if (method == "DCM_113108") opt_anonymizationMethods.insert(M_113108);
+                if (method == "DCM_113109") opt_anonymizationMethods.insert(M_113109);
+                if (method == "DCM_113112") opt_anonymizationMethods.insert(M_113112);
+            } while (cmd.findOption("--anonym-method", 0, OFCommandLine::FOM_NextFromLeft));
+
+
+        }
         //TODO see if possible to add in future
         // if (cmd.findOption("--gen-dicomdir")) {
         //     opt_generateDicomDir = true;
         // }
 
-        OFLOG_DEBUG(mainLooger, rcsid.c_str() << OFendl);
+        OFLOG_DEBUG(mainLogger, rcsid.c_str() << OFendl);
     }
 
-    if (!std::filesystem::exists(opt_inDirectory) ||
-        std::filesystem::is_empty(opt_inDirectory) ||
-        std::filesystem::is_regular_file(opt_inDirectory)) {
-        fmt::print("Directory {} is empty, is not directory or does not exist\n", opt_inDirectory);
-        return 1;
+    if (std::filesystem::exists(opt_inDirectory)) {
+        if (!std::filesystem::is_directory(opt_inDirectory)) {
+            OFLOG_ERROR(mainLogger, fmt::format(R"(Path "{}" is not directory)", opt_inDirectory));
+            return 1;
+        }
+
+        if (std::filesystem::is_empty(opt_inDirectory)) {
+            OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" is empty)"));
+            return 1;
+        }
+    } else {
+        OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" does not exist)", opt_inDirectory));
+        return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
     // TODO implement deidentification methods?
@@ -199,7 +228,7 @@ int main(int argc, char *argv[]) {
             fmt::print("Created directory {}\n", anonymizer.m_outputStudyDir);
         }
 
-        cond = anonymizer.anonymizeStudy(pseudoname, opt_rootUID);
+        cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
 
         // something bad happened
         if (!cond) {

@@ -4,6 +4,8 @@
 
 #include "DicomAnonymizer.hpp"
 
+#include <set>
+
 #include <dcmtk/dcmdata/dcuid.h>
 
 bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_directory) {
@@ -27,7 +29,10 @@ bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_direc
     return true;
 }
 
-bool StudyAnonymizer::anonymizeStudy(const std::string &pseudoname, const char* root) {
+bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudoname,
+                                     const std::set<E_ANONYM_METHODS> &methods,
+                                     const char *                      root) {
+
 
     char newStudyUID[65];
     dcmGenerateUniqueIdentifier(newStudyUID, root);
@@ -46,24 +51,55 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &pseudoname, const char* 
         m_dataset->findAndGetOFString(DCM_PatientName, m_oldName);
         m_dataset->findAndGetOFString(DCM_PatientID, m_oldID);
 
+        // dicom tags anonymization specification https://dicom.nema.org/medical/dicom/current/output/chtml/part15/chapter_E.html
+
         // TODO put it into array as part of DCM deidentification methods?
-        m_dataset->putAndInsertOFStringArray(DCM_PatientName, pseudoname);
-        m_dataset->putAndInsertOFStringArray(DCM_PatientID, pseudoname);
-        m_dataset->putAndInsertOFStringArray(DCM_PatientAge, "000Y");
-        m_dataset->putAndInsertOFStringArray(DCM_PatientSex, "O");
-        m_dataset->putAndInsertOFStringArray(DCM_PatientAddress, "");
-        m_dataset->putAndInsertOFStringArray(DCM_AdditionalPatientHistory, "");
+        // Basic Application Confidentiality Profile
+        if (methods.contains(M_113100)) {
+            m_dataset->putAndInsertOFStringArray(DCM_PatientName, pseudoname);
+            m_dataset->putAndInsertOFStringArray(DCM_PatientID, pseudoname);
+            m_dataset->putAndInsertOFStringArray(DCM_PatientAddress, "");
+            m_dataset->putAndInsertOFStringArray(DCM_AdditionalPatientHistory, "");
+            // m_dataset->remove(DCM_PatientAddress);
+            // m_dataset->remove(DCM_AdditionalPatientHistory);
 
-        //TODO remove institution, operator and relevant tags
-        m_dataset->putAndInsertOFStringArray(DCM_InstitutionName, "");
-        m_dataset->putAndInsertOFStringArray(DCM_InstitutionAddress, "");
-        m_dataset->putAndInsertOFStringArray(DCM_InstitutionalDepartmentName, "");
+            // Retain Patient Characteristics Option
+            if (!methods.contains(M_113108)) {
+                // FIXME where applicable replace ->putAndInsertOFStringArray with ->remove
+                m_dataset->putAndInsertOFStringArray(DCM_PatientAge, "000Y");
+                m_dataset->putAndInsertOFStringArray(DCM_PatientSex, "O");
+                m_dataset->remove(DCM_PatientInstitutionResidence);
+                // m_dataset->remove(DCM_PatientAge);
+                // m_dataset->remove(DCM_PatientWeight);
+                // m_dataset->remove(DCM_PatientSize);
+            }
+        }
 
-        // erase operator, physician and other medical personel
-        m_dataset->putAndInsertOFStringArray(DCM_OperatorsName, "");
-        m_dataset->putAndInsertOFStringArray(DCM_ReferringPhysicianName, "");
-        m_dataset->putAndInsertOFStringArray(DCM_PerformingPhysicianName, "");
-        m_dataset->putAndInsertOFStringArray(DCM_NameOfPhysiciansReadingStudy, "");
+
+        // Retain Institution Identity Option
+        if (!methods.contains(M_113112)) {
+            // FIXME where applicable replace ->putAndInsertOFStringArray with ->remove
+            // institution tags
+            m_dataset->putAndInsertOFStringArray(DCM_InstitutionName, "");
+            m_dataset->putAndInsertOFStringArray(DCM_InstitutionAddress, "");
+            m_dataset->putAndInsertOFStringArray(DCM_InstitutionalDepartmentName, "");
+
+            // operator, physician and other medical personel tags
+            m_dataset->putAndInsertOFStringArray(DCM_OperatorsName, "");
+            m_dataset->putAndInsertOFStringArray(DCM_ReferringPhysicianName, "");
+            m_dataset->putAndInsertOFStringArray(DCM_PerformingPhysicianName, "");
+            m_dataset->putAndInsertOFStringArray(DCM_NameOfPhysiciansReadingStudy, "");
+
+            // m_dataset->remove(DCM_NameOfPhysiciansReadingStudy);
+            // m_dataset->remove(DCM_PerformingPhysicianName);
+            // m_dataset->remove(DCM_ScheduledPerformingPhysicianName);
+            // m_dataset->remove(DCM_OperatorsName);
+            // m_dataset->remove(DCM_InstitutionName);
+            // m_dataset->remove(DCM_InstitutionAddress);
+            // m_dataset->remove(DCM_InstitutionalDepartmentName);
+
+        }
+
 
         OFString oldSeriesUID{};
         m_dataset->findAndGetOFString(DCM_SeriesInstanceUID, oldSeriesUID);
