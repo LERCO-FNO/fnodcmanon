@@ -52,8 +52,8 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
         m_dataset->findAndGetOFString(DCM_PatientID, m_oldID);
 
         // dicom tags anonymization specification https://dicom.nema.org/medical/dicom/current/output/chtml/part15/chapter_E.html
+        // deidentification methods explained https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html
 
-        // TODO put it into array as part of DCM deidentification methods?
         // Basic Application Confidentiality Profile
         if (methods.contains(M_113100)) {
             m_dataset->putAndInsertOFStringArray(DCM_PatientName, pseudoname);

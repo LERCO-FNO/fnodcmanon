@@ -180,8 +180,6 @@ int main(int argc, char *argv[]) {
         return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
-    // TODO implement deidentification methods?
-    // https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html
     StudyAnonymizer anonymizer{};
 
     std::vector<std::string> studyDirectories{};
