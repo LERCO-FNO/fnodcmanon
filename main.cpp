@@ -167,16 +167,16 @@ int main(int argc, char *argv[]) {
 
     if (std::filesystem::exists(opt_inDirectory)) {
         if (!std::filesystem::is_directory(opt_inDirectory)) {
-            OFLOG_ERROR(mainLogger, fmt::format(R"(Path "{}" is not directory)", opt_inDirectory));
+            OFLOG_ERROR(mainLogger, fmt::format(R"(Path "{}" is not directory)", opt_inDirectory).c_str());
             return 1;
         }
 
         if (std::filesystem::is_empty(opt_inDirectory)) {
-            OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" is empty)"));
+            OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" is empty)", opt_inDirectory).c_str());
             return 1;
         }
     } else {
-        OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" does not exist)", opt_inDirectory));
+        OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" does not exist)", opt_inDirectory).c_str());
         return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
