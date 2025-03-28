@@ -21,6 +21,10 @@
 #include "fmt/ranges.h"
 #include "fmt/color.h"
 
+extern OFLogger mainLogger;
+
+void setupLogger(std::string_view logger_name);
+
 enum E_FILENAMES {
     F_HEX,
     F_MODALITY_SOPINSTUID

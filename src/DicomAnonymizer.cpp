@@ -2,11 +2,18 @@
 // Created by Vojtěch on 18.03.2025.
 //
 
-#include "DicomAnonymizer.hpp"
-
 #include <set>
 
-#include <dcmtk/dcmdata/dcuid.h>
+#include "DicomAnonymizer.hpp"
+
+#include "dcmtk/dcmdata/dcuid.h"
+#include "dcmtk/oflog/oflog.h"
+
+OFLogger mainLogger = OFLog::getLogger("");
+
+void setupLogger(std::string_view logger_name) {
+    mainLogger = OFLog::getLogger(logger_name.data());
+};
 
 bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_directory) {
 

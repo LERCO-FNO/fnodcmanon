@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
 
     OFLogger mainLogger = OFLog::getLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION).c_str());
 
+    setupLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION));
     OFConsoleApplication app(FNO_CONSOLE_APPLICATION, "DICOM anonymization tool", rcsid.c_str());
     OFCommandLine        cmd;
 
