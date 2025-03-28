@@ -54,13 +54,11 @@ public:
 
     // void generateDicomDir(const std::string &dicomdir_path);
 
-    int         m_numberOfStudies{0};
     E_FILENAMES m_filenameType{F_HEX};
     OFString    m_oldName{};
     OFString    m_oldID{};
     std::string m_outputStudyDir{};
     std::string m_patientListFilename{};
-
 
 private:
     int m_numberOfFiles{0};

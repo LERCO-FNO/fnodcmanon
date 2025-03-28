@@ -9,7 +9,6 @@
 #include "dcmtk/dcmdata/dctk.h"
 #include "dcmtk/dcmdata/cmdlnarg.h"
 #include "dcmtk/ofstd/ofconapp.h"
-#include "dcmtk/oflog/oflog.h"
 
 #include "DicomAnonymizer.hpp"
 
@@ -23,6 +22,26 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt, const char 
     app.printError(str.c_str(), EXITCODE_COMMANDLINE_SYNTAX_ERROR);
 };
 
+int getNumberOfStudies(const char *opt_inDirectory) {
+    int studyCount{0};
+    for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
+        if (!studyDir.is_directory()) {
+            OFLOG_WARN(mainLogger,
+                       fmt::format(R"(Path "{}" is not directory)", studyDir.path().string()).c_str());
+        }
+
+        if (studyDir.path().empty()) {
+            OFLOG_WARN(mainLogger,
+                       fmt::format(R"(Directory "{}" is empty\n)",
+                           studyDir.path().string()).c_str()
+                      );
+            continue;
+        }
+        ++studyCount;
+    }
+    return studyCount;
+};
+
 int main(int argc, char *argv[]) {
     constexpr auto    FNO_CONSOLE_APPLICATION{"fnodcmanon"};
     constexpr auto    APP_VERSION{"0.3.0"};
@@ -34,7 +53,7 @@ int main(int argc, char *argv[]) {
                                           OFFIS_DCMTK_VERSION,
                                           OFFIS_DCMTK_RELEASEDATE);
 
-    OFLogger mainLogger = OFLog::getLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION).c_str());
+    // OFLogger mainLogger = OFLog::getLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION).c_str());
 
     setupLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION));
     OFConsoleApplication app(FNO_CONSOLE_APPLICATION, "DICOM anonymization tool", rcsid.c_str());
@@ -183,19 +202,8 @@ int main(int argc, char *argv[]) {
 
     StudyAnonymizer anonymizer{};
 
-    std::vector<std::string> studyDirectories{};
-    for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
-        if (!studyDir.is_directory()) continue;
-        if (studyDir.path().empty()) {
-            OFLOG_ERROR(mainLogger,
-                        fmt::format(R"(Directory "{}" is empty\n)",
-                            studyDir.path().string()).c_str()
-                       );
-            continue;
-        }
-        studyDirectories.push_back(studyDir.path().string());
-        ++anonymizer.m_numberOfStudies;
-    }
+    // used to format leading zeros
+    int numberOfStudies = getNumberOfStudies(opt_inDirectory);
 
     anonymizer.m_patientListFilename = opt_patientListFilename;
     anonymizer.m_filenameType = opt_filenameType;
@@ -221,8 +229,7 @@ int main(int argc, char *argv[]) {
         const std::string pseudoname = fmt::format("{}{:0{}}",
                                                    opt_anonymizedPrefix,
                                                    index++,
-                                                   std::to_string(anonymizer.m_numberOfStudies).length());
-
+                                                   numberOfStudies);
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
         if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
