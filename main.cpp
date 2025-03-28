@@ -19,7 +19,7 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt, const char 
 };
 
 void checkConflict(OFConsoleApplication &app, const char *first_opt, const char *second_opt, const char *third_opt) {
-    const std::string str = fmt::format("{}, {} and {} not allowed with together", first_opt, second_opt, third_opt);
+    const std::string str = fmt::format("{}, {} and {} not allowed together", first_opt, second_opt, third_opt);
     app.printError(str.c_str(), EXITCODE_COMMANDLINE_SYNTAX_ERROR);
 };
 
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
     constexpr int SHORTCOL{4};
     cmd.setParamColumn(LONGCOL + SHORTCOL + 4);
     cmd.addParam("in-directory", "input directory with DICOM files");
-    cmd.addParam("anonymized-prefix", "patient prefix overwriting PatientID, PatientName");
+    cmd.addParam("anonymized-prefix", "patient prefix overwriting DICOM tags PatientID, PatientName");
 
     cmd.setOptionColumns(LONGCOL, SHORTCOL);
     cmd.addGroup("general options:", LONGCOL, SHORTCOL + 2);
@@ -185,11 +185,14 @@ int main(int argc, char *argv[]) {
     std::vector<std::string> studyDirectories{};
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
         if (!studyDir.is_directory()) continue;
-        if (std::filesystem::is_empty(studyDir)) {
-            fmt::print("Directory {} is empty\n", studyDir.path().stem().string());
+        if (studyDir.path().empty()) {
+            OFLOG_ERROR(mainLogger,
+                        fmt::format(R"(Directory "{}" is empty\n)",
+                            studyDir.path().string()).c_str()
+                       );
             continue;
         }
-        studyDirectories.emplace_back(studyDir.path().string());
+        studyDirectories.push_back(studyDir.path().string());
         ++anonymizer.m_numberOfStudies;
     }
 
@@ -206,31 +209,40 @@ int main(int argc, char *argv[]) {
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
         bool cond = anonymizer.getStudyFilenames(studyDir.path());
         if (!cond) {
-            fmt::print("Failed to get study file names from: {}\n", studyDir.path().stem().string());
+            OFLOG_ERROR(mainLogger,
+                        fmt::format(R"(Failed to get study file names from: "{}"\n)",
+                            studyDir.path().stem().string()).c_str());
             continue;
         }
 
         fmt::print("Anonymizing study {}\n", studyDir.path().stem().string());
 
-        const std::string pseudoname = fmt::format("{}_{:0{}}",
+        const std::string pseudoname = fmt::format("{}{:0{}}",
                                                    opt_anonymizedPrefix,
                                                    index++,
-                                                   anonymizer.m_numberOfStudies);
+                                                   std::to_string(anonymizer.m_numberOfStudies).length());
 
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
         if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
-            fmt::print("Directory {} exists, overwriting files\n", anonymizer.m_outputStudyDir);
+            OFLOG_WARN(mainLogger,
+                       fmt::format(R"(Directory "{}" exists, overwriting files\n)",
+                           anonymizer.m_outputStudyDir).c_str()
+                );
         } else {
             (void)std::filesystem::create_directories(anonymizer.m_outputStudyDir);
-            fmt::print("Created directory {}\n", anonymizer.m_outputStudyDir);
+            OFLOG_INFO(mainLogger,
+                       fmt::format(R"(Created directory "{}"\n)", anonymizer.m_outputStudyDir).c_str()
+                );
         }
 
         cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
 
         // something bad happened
         if (!cond) {
-            fmt::print("Failed to anonymize study: {}\n", studyDir.path().stem().string());
+            OFLOG_ERROR(mainLogger,
+                        fmt::format(R"(Failed to anonymize study: "{}"\n)", studyDir.path().stem().string()).c_str()
+                        );
             continue;
         }
         //TODO see if possible to add in future
