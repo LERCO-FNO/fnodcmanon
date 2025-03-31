@@ -67,15 +67,16 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
             m_dataset->putAndInsertOFStringArray(DCM_PatientID, pseudoname);
             m_dataset->putAndInsertOFStringArray(DCM_PatientAddress, "");
             m_dataset->putAndInsertOFStringArray(DCM_AdditionalPatientHistory, "");
+            m_dataset->remove(DCM_PatientInstitutionResidence);
             // m_dataset->remove(DCM_PatientAddress);
             // m_dataset->remove(DCM_AdditionalPatientHistory);
 
             // Retain Patient Characteristics Option
+            // remove/replace tags if option not found
             if (!methods.contains(M_113108)) {
                 // FIXME where applicable replace ->putAndInsertOFStringArray with ->remove
                 m_dataset->putAndInsertOFStringArray(DCM_PatientAge, "000Y");
                 m_dataset->putAndInsertOFStringArray(DCM_PatientSex, "O");
-                m_dataset->remove(DCM_PatientInstitutionResidence);
                 // m_dataset->remove(DCM_PatientAge);
                 // m_dataset->remove(DCM_PatientWeight);
                 // m_dataset->remove(DCM_PatientSize);
@@ -84,6 +85,7 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
 
 
         // Retain Institution Identity Option
+        // remove/replace tags if option not found
         if (!methods.contains(M_113112)) {
             // FIXME where applicable replace ->putAndInsertOFStringArray with ->remove
             // institution tags
