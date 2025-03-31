@@ -204,6 +204,7 @@ int main(int argc, char *argv[]) {
 
     // used to format leading zeros
     int numberOfStudies = getNumberOfStudies(opt_inDirectory);
+    int indexWidth = static_cast<int>(std::to_string(numberOfStudies).length());
 
     anonymizer.m_patientListFilename = opt_patientListFilename;
     anonymizer.m_filenameType = opt_filenameType;
@@ -229,7 +230,7 @@ int main(int argc, char *argv[]) {
         const std::string pseudoname = fmt::format("{}{:0{}}",
                                                    opt_anonymizedPrefix,
                                                    index++,
-                                                   numberOfStudies);
+                                                   indexWidth);
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
         if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
