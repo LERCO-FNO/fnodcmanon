@@ -126,7 +126,14 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
         m_dataset->chooseRepresentation(xfer, nullptr);
         m_fileformat.loadAllDataIntoMemory();
 
-        const std::string outputName = fmt::format("{:08X}", fileNumber);
+        std::string outputName{};
+        if (m_filenameType == F_HEX) {
+            outputName = fmt::format("{:08X}", fileNumber);
+        } else if (m_filenameType == F_MODALITY_SOPINSTUID) {
+            const char *modality;
+            m_dataset->findAndGetString(DCM_Modality, modality);
+            outputName = fmt::format("{}{}", modality, newSOPInstanceUID);
+        }
         const std::string outputPath = fmt::format("{}/{}", m_outputStudyDir, outputName);
         cond = m_fileformat.saveFile(outputPath.c_str(), xfer);
 
