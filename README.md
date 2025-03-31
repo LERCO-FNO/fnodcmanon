@@ -7,7 +7,7 @@ individual directories and assigns <pseudoname_index>, where index is the order 
 fnodcmanon in-directory pseudoname [options]
 ```
 
-De-identification is based on methods explained [here](https://dicom.nema.org/medical/dicom/current/output/chtml/part16/chapter_D.html#DCM_113100). 
+De-identification is based on methods explained [PS3.16 2025a](https://dicom.nema.org/medical/dicom/current/output/chtml/part16/chapter_D.html#DCM_113100). 
 
 ## Requirements
 * fmt v11.1 or newer
