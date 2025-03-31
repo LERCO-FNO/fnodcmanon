@@ -1,8 +1,10 @@
+#include <array>
 #include <string>
 #include <filesystem>
 #include <set>
 
 #include "fmt/format.h"
+#include "fmt/ranges.h"
 #include "fmt/os.h"
 
 #include "dcmtk/config/osconfig.h"
@@ -24,7 +26,7 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt, const char 
 
 int getNumberOfStudies(const char *opt_inDirectory) {
     int studyCount{0};
-    for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
+    for (const auto &studyDir: std::filesystem::directory_iterator(opt_inDirectory)) {
         if (!studyDir.is_directory()) {
             OFLOG_WARN(mainLogger,
                        fmt::format(R"(Path "{}" is not directory)", studyDir.path().string()).c_str());
@@ -42,11 +44,24 @@ int getNumberOfStudies(const char *opt_inDirectory) {
     return studyCount;
 };
 
+void printMethods() {
+    constexpr std::array<std::string_view, 3> methods = {"M_113100", "M_113108", "M_113112"};
+    constexpr std::array<std::string_view, 3> names   = {
+        "Basic Application Confidentiality Profile",
+        "Retain Patient Characteristics Option",
+        "Retain Institution Identity Option"
+    };
+    constexpr std::array<std::string_view, 3> option = {"always", "optional", "optional"};
+    for (int i = 0; i < methods.size(); ++i) {
+        fmt::print("{:<10} | {:<45} | {:<10}\n", methods[i], names[i], option[i]);
+    }
+}
+
 int main(int argc, char *argv[]) {
     constexpr auto    FNO_CONSOLE_APPLICATION{"fnodcmanon"};
     constexpr auto    APP_VERSION{"0.3.0"};
     constexpr auto    RELEASE_DATE{"2024-11-19"};
-    const std::string rcsid = fmt::format("${}: ver. {} rel. {}\n$dcmtk: ver. {} rel.",
+    const std::string rcsid = fmt::format("${}: ver. {} rel. {}\n$dcmtk: ver. {} rel.{}",
                                           FNO_CONSOLE_APPLICATION,
                                           APP_VERSION,
                                           RELEASE_DATE,
@@ -77,8 +92,8 @@ int main(int argc, char *argv[]) {
     constexpr int LONGCOL{20};
     constexpr int SHORTCOL{4};
     cmd.setParamColumn(LONGCOL + SHORTCOL + 4);
-    cmd.addParam("in-directory", "input directory with DICOM files");
-    cmd.addParam("anonymized-prefix", "patient prefix overwriting DICOM tags PatientID, PatientName");
+    cmd.addParam("in-directory", "input directory with DICOM studies");
+    cmd.addParam("anonymized-prefix", "pseudoname prefix overwriting DICOM tags PatientID, PatientName");
 
     cmd.setOptionColumns(LONGCOL, SHORTCOL);
     cmd.addGroup("general options:", LONGCOL, SHORTCOL + 2);
@@ -86,6 +101,10 @@ int main(int argc, char *argv[]) {
     cmd.addOption("--version",
                   "print version information and exit",
                   OFCommandLine::AF_Exclusive);
+    cmd.addOption("--print-methods", "-pm",
+                  "print deidentification methods and their explanation",
+                  OFCommandLine::AF_Exclusive);
+
     OFLog::addOptions(cmd);
 
     cmd.addGroup("anonymization options:");
@@ -93,7 +112,8 @@ int main(int argc, char *argv[]) {
                   "-m",
                   1,
                   "method: string",
-                  "add anonymization method to list (default DCM_113100");
+                  "add anonymization method to list (default [DCM_113100])\n"
+                  "use --print-methods or -pm to print out acceptable methods and their explanation");
 
     cmd.addOption("--fno-uid-root", "-fuid", fmt::format("use FNO UID root: {} (default)", FNO_UID_ROOT).c_str());
     cmd.addOption("--offis-uid-root", "-ouid", "use OFFIS UID root: " OFFIS_UID_ROOT);
@@ -110,8 +130,7 @@ int main(int argc, char *argv[]) {
     cmd.addOption("--key-list",
                   "-k",
                   1,
-                  "filename: string",
-                  R"(write anonymized patients to text file (default "<out-directory>/anonymized_patients.txt))");
+                  "filename: string","set name of pre-post anonymization text file\n(default <out-directory>/anonymized_patients.txt)");
     cmd.addOption("--gen-dicomdir", "-dd", "generate new DICOMDIR file (default false)");
 
     prepareCmdLineArgs(argc, argv, FNO_CONSOLE_APPLICATION);
@@ -119,6 +138,11 @@ int main(int argc, char *argv[]) {
         if (cmd.hasExclusiveOption()) {
             if (cmd.findOption("--version")) {
                 app.printHeader(OFTrue);
+                return 0;
+            }
+
+            if (cmd.findOption("--print-methods")) {
+                printMethods();
                 return 0;
             }
         }
@@ -174,8 +198,6 @@ int main(int argc, char *argv[]) {
                 if (method == "DCM_113109") opt_anonymizationMethods.insert(M_113109);
                 if (method == "DCM_113112") opt_anonymizationMethods.insert(M_113112);
             } while (cmd.findOption("--anonym-method", 0, OFCommandLine::FOM_NextFromLeft));
-
-
         }
         //TODO see if possible to add in future
         // if (cmd.findOption("--gen-dicomdir")) {
@@ -203,16 +225,16 @@ int main(int argc, char *argv[]) {
     StudyAnonymizer anonymizer{};
 
     // used to format leading zeros
-    int numberOfStudies = getNumberOfStudies(opt_inDirectory);
-    int indexWidth = static_cast<int>(std::to_string(numberOfStudies).length());
+    const int numberOfStudies = getNumberOfStudies(opt_inDirectory);
+    const int indexWidth      = static_cast<int>(std::to_string(numberOfStudies).length());
 
     anonymizer.m_patientListFilename = opt_patientListFilename;
-    anonymizer.m_filenameType = opt_filenameType;
+    anonymizer.m_filenameType        = opt_filenameType;
 
-    (void)std::filesystem::create_directories(opt_outDirectory);
+    (void) std::filesystem::create_directories(opt_outDirectory);
     fmt::ostream keyListFile = fmt::output_file(fmt::format("{}/{}",
-                                                opt_outDirectory,
-                                                opt_patientListFilename));
+                                                            opt_outDirectory,
+                                                            opt_patientListFilename));
     keyListFile.print("old name, old id, new name/id\n");
 
     int index{1};
@@ -237,12 +259,12 @@ int main(int argc, char *argv[]) {
             OFLOG_WARN(mainLogger,
                        fmt::format(R"(Directory "{}" exists, overwriting files\n)",
                            anonymizer.m_outputStudyDir).c_str()
-                );
+                      );
         } else {
-            (void)std::filesystem::create_directories(anonymizer.m_outputStudyDir);
+            (void) std::filesystem::create_directories(anonymizer.m_outputStudyDir);
             OFLOG_INFO(mainLogger,
                        fmt::format(R"(Created directory "{}"\n)", anonymizer.m_outputStudyDir).c_str()
-                );
+                      );
         }
 
         cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
@@ -251,7 +273,7 @@ int main(int argc, char *argv[]) {
         if (!cond) {
             OFLOG_ERROR(mainLogger,
                         fmt::format(R"(Failed to anonymize study: "{}"\n)", studyDir.path().stem().string()).c_str()
-                        );
+                       );
             continue;
         }
         //TODO see if possible to add in future
