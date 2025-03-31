@@ -95,6 +95,7 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
             m_dataset->putAndInsertOFStringArray(DCM_OperatorsName, "");
             m_dataset->putAndInsertOFStringArray(DCM_ReferringPhysicianName, "");
             m_dataset->putAndInsertOFStringArray(DCM_PerformingPhysicianName, "");
+            m_dataset->putAndInsertOFStringArray(DCM_PhysiciansOfRecord, "");
             m_dataset->putAndInsertOFStringArray(DCM_NameOfPhysiciansReadingStudy, "");
 
             // m_dataset->remove(DCM_NameOfPhysiciansReadingStudy);
