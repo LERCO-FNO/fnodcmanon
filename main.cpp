@@ -4,7 +4,6 @@
 #include <set>
 
 #include "fmt/format.h"
-#include "fmt/ranges.h"
 #include "fmt/os.h"
 
 #include "dcmtk/config/osconfig.h"
