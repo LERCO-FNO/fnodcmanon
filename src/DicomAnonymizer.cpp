@@ -28,7 +28,7 @@ bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_direc
     }
 
     if (m_dicom_files.empty()) {
-        fmt::print("No files found\n");
+        OFLOG_ERROR(mainLogger, "No files found");
         return false;
     }
 
@@ -48,8 +48,8 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
     for (const auto& file : m_dicom_files) {
         OFCondition cond = m_fileformat.loadFile(file.c_str());
         if (cond.bad()) {
-            fmt::print("Unable to load file {}\n", file);
-            fmt::print("Reason: {}\n", cond.text());
+            OFLOG_ERROR(mainLogger, "Unable to load file " << file.c_str());
+            OFLOG_ERROR(mainLogger, cond.text());
             return false;
         }
 
