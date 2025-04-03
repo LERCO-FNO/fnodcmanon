@@ -15,11 +15,9 @@
 #include "dcmtk/dcmdata/dcfilefo.h"
 #include "dcmtk/dcmdata/dcdatset.h"
 #include "dcmtk/dcmdata/dcdeftag.h"
-#include "dcmtk/dcmdata/dcddirif.h"
 
 #include "fmt/format.h"
 #include "fmt/ranges.h"
-#include "fmt/color.h"
 
 extern OFLogger mainLogger;
 
@@ -52,8 +50,6 @@ public:
 
     bool removeInvalidTags() const;
 
-    // void generateDicomDir(const std::string &dicomdir_path);
-
     E_FILENAMES m_filenameType{F_HEX};
     OFString    m_oldName{};
     OFString    m_oldID{};
@@ -67,8 +63,5 @@ private:
     DcmFileFormat                                m_fileformat;
     DcmDataset *                                 m_dataset{nullptr};
 };
-
-// static DicomDirInterface::E_ApplicationProfile
-// selectApplicationProfile(const char *modality);
 
 #endif //DICOMANONYMIZER_HPP

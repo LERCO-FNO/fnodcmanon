@@ -182,36 +182,3 @@ bool StudyAnonymizer::removeInvalidTags() const {
 
     return true;
 }
-
-// void StudyAnonymizer::generateDicomDir(const std::string &dicomdir_path) {
-//     DicomDirInterface dicomdir;
-//
-//     OFString ap_profile{};
-//     m_fileformat.getDataset()->findAndGetOFString(DCM_RequestedMediaApplicationProfile, ap_profile);
-//
-//     dicomdir.
-//
-//     const std::string dicomdirName = fmt::format("{}/DICOMDIR", dicomdir_path);
-//     OFCondition status = dicomdir.createNewDicomDir(dicomdir.AP_Default, dicomdirName.c_str(), "");
-//
-//     for (const auto& file : std::filesystem::directory_iterator(m_out_study_directory)) {
-//         const std::string filepath = fmt::format("DATA/{}", file.path().stem().string());
-//         dicomdir.addDicomFile(filepath.c_str(), dicomdir_path.c_str());
-//     }
-//
-//
-// }
-
-// DicomDirInterface::E_ApplicationProfile
-// selectApplicationProfile(const char *modality) {
-//     if (modality == nullptr) return DicomDirInterface::AP_GeneralPurpose;
-//
-//     switch (modality) {
-//         case "CT":
-//             return DicomDirInterface::AP_CTandMR;
-//         case "MR":
-//             return DicomDirInterface::AP_CTandMR;
-//         default:
-//             return DicomDirInterface::AP_GeneralPurpose;
-//     }
-// }
