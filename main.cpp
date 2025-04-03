@@ -85,8 +85,6 @@ int main(int argc, char *argv[]) {
     const char *opt_patientListFilename{"anonymized_patients.txt"};
 
     std::set<E_ANONYM_METHODS> opt_anonymizationMethods{M_113100};
-    //TODO implement this in future
-    // bool        opt_generateDicomDir{false};
 
     constexpr int LONGCOL{20};
     constexpr int SHORTCOL{4};
@@ -128,8 +126,8 @@ int main(int argc, char *argv[]) {
     cmd.addOption("--key-list",
                   "-k",
                   1,
-                  "filename: string","set name of pre-post anonymization text file\n(default <out-directory>/anonymized_patients.txt)");
-    cmd.addOption("--gen-dicomdir", "-dd", "generate new DICOMDIR file (default false)");
+                  "filename: string",
+                  "set name of pre-post anonymization text file\n(default <out-directory>/anonymized_patients.txt)");
 
     prepareCmdLineArgs(argc, argv, FNO_CONSOLE_APPLICATION);
     if (app.parseCommandLine(cmd, argc, argv)) {
@@ -197,26 +195,22 @@ int main(int argc, char *argv[]) {
                 if (method == "DCM_113112") opt_anonymizationMethods.insert(M_113112);
             } while (cmd.findOption("--anonym-method", 0, OFCommandLine::FOM_NextFromLeft));
         }
-        //TODO see if possible to add in future
-        // if (cmd.findOption("--gen-dicomdir")) {
-        //     opt_generateDicomDir = true;
-        // }
 
         OFLOG_DEBUG(mainLogger, rcsid.c_str() << OFendl);
     }
 
     if (std::filesystem::exists(opt_inDirectory)) {
         if (!std::filesystem::is_directory(opt_inDirectory)) {
-            OFLOG_ERROR(mainLogger, fmt::format(R"(Path "{}" is not directory)", opt_inDirectory).c_str());
-            return 1;
+            OFLOG_ERROR(mainLogger, fmt::format("Invalid path: <not directory> \"{}\"", opt_inDirectory).c_str());
+            return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
         }
 
         if (std::filesystem::is_empty(opt_inDirectory)) {
-            OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" is empty)", opt_inDirectory).c_str());
-            return 1;
+            OFLOG_ERROR(mainLogger, fmt::format("Invalid directory <empty directory> \"{}\"", opt_inDirectory).c_str());
+            return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
         }
     } else {
-        OFLOG_ERROR(mainLogger, fmt::format(R"(Directory "{}" does not exist)", opt_inDirectory).c_str());
+        OFLOG_ERROR(mainLogger, fmt::format("Invalid path <directory not found> \"{}\"", opt_inDirectory).c_str());
         return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
@@ -230,6 +224,7 @@ int main(int argc, char *argv[]) {
     anonymizer.m_filenameType        = opt_filenameType;
 
     (void) std::filesystem::create_directories(opt_outDirectory);
+    OFLOG_INFO(mainLogger, fmt::format("Created output directory \"{}\"", opt_outDirectory));
     fmt::ostream keyListFile = fmt::output_file(fmt::format("{}/{}",
                                                             opt_outDirectory,
                                                             opt_patientListFilename));
@@ -237,32 +232,34 @@ int main(int argc, char *argv[]) {
 
     int index{1};
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
+        fmt::print("Anonymizing study {}\n", studyDir.path().stem().string());
+
         bool cond = anonymizer.getStudyFilenames(studyDir.path());
         if (!cond) {
             OFLOG_ERROR(mainLogger,
-                        fmt::format(R"(Failed to get study file names from: "{}"\n)",
+                        fmt::format("Failed to get study file names from: \"{}\"",
                             studyDir.path().stem().string()).c_str());
             continue;
         }
-
-        fmt::print("Anonymizing study {}\n", studyDir.path().stem().string());
 
         const std::string pseudoname = fmt::format("{}{:0{}}",
                                                    opt_anonymizedPrefix,
                                                    index++,
                                                    indexWidth);
+        OFLOG_INFO(mainLogger, "Applying pseudoname " << pseudoname);
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
+        
         if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
-            OFLOG_WARN(mainLogger,
-                       fmt::format(R"(Directory "{}" exists, overwriting files\n)",
+            OFLOG_INFO(mainLogger,
+                       fmt::format("Directory \"{}\" exists, overwriting files",
                            anonymizer.m_outputStudyDir).c_str()
                       );
         } else {
-            (void) std::filesystem::create_directories(anonymizer.m_outputStudyDir);
-            OFLOG_INFO(mainLogger,
-                       fmt::format(R"(Created directory "{}"\n)", anonymizer.m_outputStudyDir).c_str()
-                      );
+            if (std::filesystem::create_directories(anonymizer.m_outputStudyDir))
+                OFLOG_INFO(mainLogger,
+                           fmt::format(R"(Created directory "{}"\n)", anonymizer.m_outputStudyDir).c_str()
+                           );
         }
 
         cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
@@ -274,11 +271,6 @@ int main(int argc, char *argv[]) {
                        );
             continue;
         }
-        //TODO see if possible to add in future
-        // if (opt_generateDicomDir) {
-        //     const std::string dicomDirPath = fmt::format("{}/{}", opt_outDirectory, pseudoname);
-        //     anonymizer.generateDicomDir(dicomDirPath);
-        // }
 
         keyListFile.print("{},{},{}\n", anonymizer.m_oldName, anonymizer.m_oldID, pseudoname);
     }
