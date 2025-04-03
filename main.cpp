@@ -23,24 +23,24 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt, const char 
     app.printError(str.c_str(), EXITCODE_COMMANDLINE_SYNTAX_ERROR);
 };
 
-int getNumberOfStudies(const char *opt_inDirectory) {
+auto getNumberOfStudies(const char *opt_inDirectory) {
     int studyCount{0};
     for (const auto &studyDir: std::filesystem::directory_iterator(opt_inDirectory)) {
         if (!studyDir.is_directory()) {
             OFLOG_WARN(mainLogger,
-                       fmt::format(R"(Path "{}" is not directory)", studyDir.path().string()).c_str());
+                       fmt::format("Invalid path <not directory> \"{}\"", studyDir.path().string()).c_str());
         }
 
         if (studyDir.path().empty()) {
             OFLOG_WARN(mainLogger,
-                       fmt::format(R"(Directory "{}" is empty\n)",
+                       fmt::format("Invalid directory <is empty> \"{}\"",
                            studyDir.path().string()).c_str()
                       );
             continue;
         }
         ++studyCount;
     }
-    return studyCount;
+    return static_cast<int>(std::to_string(studyCount).length());
 };
 
 void printMethods() {
@@ -54,7 +54,7 @@ void printMethods() {
     for (int i = 0; i < methods.size(); ++i) {
         fmt::print("{:<10} | {:<45} | {:<10}\n", methods[i], names[i], option[i]);
     }
-}
+};
 
 int main(int argc, char *argv[]) {
     constexpr auto    FNO_CONSOLE_APPLICATION{"fnodcmanon"};
