@@ -36,7 +36,7 @@ bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_direc
     return true;
 }
 
-bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudoname,
+bool StudyAnonymizer::anonymizeStudy(const std::string                &pseudoname,
                                      const std::set<E_ANONYM_METHODS> &methods,
                                      const char *                      root) {
 
@@ -63,8 +63,8 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
 
         // Basic Application Confidentiality Profile
         if (methods.contains(M_113100)) {
-            m_dataset->putAndInsertOFStringArray(DCM_PatientName, pseudoname);
-            m_dataset->putAndInsertOFStringArray(DCM_PatientID, pseudoname);
+            m_dataset->putAndInsertOFStringArray(DCM_PatientName, pseudoname.c_str());
+            m_dataset->putAndInsertOFStringArray(DCM_PatientID, pseudoname.c_str());
             m_dataset->putAndInsertOFStringArray(DCM_PatientAddress, "");
             m_dataset->putAndInsertOFStringArray(DCM_AdditionalPatientHistory, "");
             m_dataset->remove(DCM_PatientInstitutionResidence);
@@ -111,10 +111,14 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
         }
 
 
-        OFString oldSeriesUID{};
-        m_dataset->findAndGetOFString(DCM_SeriesInstanceUID, oldSeriesUID);
-        OFString newSeriesUID = this->getSeriesUids(oldSeriesUID, root);
-        m_dataset->putAndInsertOFStringArray(DCM_SeriesInstanceUID, newSeriesUID);
+        // OFString oldSeriesUID{};
+        const char *oldSeriesUID{nullptr};
+        // m_dataset->findAndGetOFString(DCM_SeriesInstanceUID, oldSeriesUID);
+        m_dataset->findAndGetString(DCM_SeriesInstanceUID, oldSeriesUID);
+        // OFString newSeriesUID = this->getSeriesUids(oldSeriesUID, root).c_str();
+        const char *newSeriesUID = this->getSeriesUids(oldSeriesUID, root).c_str();
+        // m_dataset->putAndInsertOFStringArray(DCM_SeriesInstanceUID, newSeriesUID);
+        m_dataset->putAndInsertString(DCM_SeriesInstanceUID, newSeriesUID);
 
         char newSOPInstanceUID[65];
         dcmGenerateUniqueIdentifier(newSOPInstanceUID, root);
@@ -122,8 +126,10 @@ bool StudyAnonymizer::anonymizeStudy(const std::string &               pseudonam
 
         m_dataset->putAndInsertOFStringArray(DCM_StudyInstanceUID, newStudyUID);
 
-        if (!this->removeInvalidTags()) return false;
-
+        if (!this->removeInvalidTags()) {
+            OFLOG_ERROR(mainLogger, "Error occured while removing invalid tags");
+            return false;
+        }
         const E_TransferSyntax xfer = m_dataset->getCurrentXfer();
         m_dataset->chooseRepresentation(xfer, nullptr);
         m_fileformat.loadAllDataIntoMemory();
@@ -167,7 +173,10 @@ std::string StudyAnonymizer::getSeriesUids(const std::string &old_series_uid, co
 bool StudyAnonymizer::removeInvalidTags() const {
 
     // sanity check
-    if (m_dataset == nullptr) return false;
+    if (m_dataset == nullptr) {
+        OFLOG_ERROR(mainLogger, "Dataset is nullptr");
+        return false;
+    }
 
     for (unsigned long i = 0; i < m_dataset->card(); ++i) {
         const DcmElement *element = m_dataset->getElement(i);

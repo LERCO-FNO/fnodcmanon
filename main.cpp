@@ -23,7 +23,7 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt, const char 
     app.printError(str.c_str(), EXITCODE_COMMANDLINE_SYNTAX_ERROR);
 };
 
-auto getNumberOfStudies(const char *opt_inDirectory) {
+auto formatDirCountWidth(const char *opt_inDirectory) {
     int studyCount{0};
     for (const auto &studyDir: std::filesystem::directory_iterator(opt_inDirectory)) {
         if (!studyDir.is_directory()) {
@@ -195,30 +195,28 @@ int main(int argc, char *argv[]) {
                 if (method == "DCM_113112") opt_anonymizationMethods.insert(M_113112);
             } while (cmd.findOption("--anonym-method", 0, OFCommandLine::FOM_NextFromLeft));
         }
-
         OFLOG_DEBUG(mainLogger, rcsid.c_str() << OFendl);
     }
 
     if (std::filesystem::exists(opt_inDirectory)) {
         if (!std::filesystem::is_directory(opt_inDirectory)) {
-            OFLOG_ERROR(mainLogger, fmt::format("Invalid path: <not directory> \"{}\"", opt_inDirectory).c_str());
+            OFLOG_ERROR(mainLogger, fmt::format("Invalid path: <not directory> \"{}\"", opt_inDirectory));
             return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
         }
 
         if (std::filesystem::is_empty(opt_inDirectory)) {
-            OFLOG_ERROR(mainLogger, fmt::format("Invalid directory <empty directory> \"{}\"", opt_inDirectory).c_str());
+            OFLOG_ERROR(mainLogger, fmt::format("Invalid directory <empty directory> \"{}\"", opt_inDirectory));
             return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
         }
     } else {
-        OFLOG_ERROR(mainLogger, fmt::format("Invalid path <directory not found> \"{}\"", opt_inDirectory).c_str());
+        OFLOG_ERROR(mainLogger, fmt::format("Invalid path <directory not found> \"{}\"", opt_inDirectory));
         return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
     StudyAnonymizer anonymizer{};
 
     // used to format leading zeros
-    const int numberOfStudies = getNumberOfStudies(opt_inDirectory);
-    const int indexWidth      = static_cast<int>(std::to_string(numberOfStudies).length());
+    const int zeroWidth = formatDirCountWidth(opt_inDirectory);
 
     anonymizer.m_patientListFilename = opt_patientListFilename;
     anonymizer.m_filenameType        = opt_filenameType;
@@ -245,11 +243,11 @@ int main(int argc, char *argv[]) {
         const std::string pseudoname = fmt::format("{}{:0{}}",
                                                    opt_anonymizedPrefix,
                                                    index++,
-                                                   indexWidth);
+                                                   zeroWidth);
         OFLOG_INFO(mainLogger, "Applying pseudoname " << pseudoname);
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
-        
+
         if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
             OFLOG_INFO(mainLogger,
                        fmt::format("Directory \"{}\" exists, overwriting files",
