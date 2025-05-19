@@ -6,6 +6,8 @@
 
 #include "Database.hpp"
 
+#include <DicomAnonymizer.hpp>
+
 void Database::createTable(const std::string& table_name) {
     m_database << "CREATE TABLE IF NOT EXISTS " + table_name + " ("
     "_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,"
@@ -37,17 +39,26 @@ std::string Database::queryPseudoname(const std::string& query_id) {
     return pseudoname;
 }
 
-void Database::insertRow(const std::string &patient_id, const std::string& pseudoname) {
-    const std::string existingPseudoname = queryPseudoname(patient_id);
+void Database::insertRow(const StudySQLFields& sql_fields, const std::string& pseudoname) {
+    const std::string existingPseudoname = queryPseudoname(sql_fields.patientID);
 
     if (existingPseudoname.empty()) {
-        // fmt::print("creating pseudoname for patient_id={}\n", insert_id);
-        // pseudoname = this->createPseudoname();
-        m_database << "INSERT INTO " + m_currentTableName + " (patient_id, pseudoname) VALUES (?, ?);"
-                << patient_id << pseudoname;
-        fmt::print("Table {}: added row patient_id={}, pseudoname={}\n", m_currentTableName, patient_id, pseudoname);
+        m_database << "INSERT INTO " + m_currentTableName +
+                " (patient_id, pseudoname) VALUES (?, ?);"
+                << sql_fields.patientID
+                << pseudoname;
+        fmt::print("Table {}: added row patient_id={}, pseudoname={}, study_inst_uid={}, study_date={}, modality={}\n",
+                   m_currentTableName,
+                   sql_fields.patientID,
+                   pseudoname,
+                   sql_fields.studyInstanceUID,
+                   sql_fields.studyDate,
+                   sql_fields.modality);
     } else {
-        fmt::print("Table: row exists patient_id={}, pseudoname={}\n", m_currentTableName, patient_id, pseudoname);
+        fmt::print("Table: row exists patient_id={}, pseudoname={}\n",
+                   m_currentTableName,
+                   sql_fields.patientID,
+                   pseudoname);
     }
 }
 

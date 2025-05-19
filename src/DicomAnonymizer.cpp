@@ -193,7 +193,7 @@ bool StudyAnonymizer::removeInvalidTags() const {
     return true;
 }
 
-std::string StudyAnonymizer::getPatientID() {
+StudySQLFields StudyAnonymizer::getPatientID() {
     OFCondition cond = m_fileformat.loadFile(m_dicom_files[0].c_str());
     if (cond.bad()) {
         OFLOG_ERROR(mainLogger, "Unable to load file " << m_dicom_files[0].c_str());
@@ -202,9 +202,14 @@ std::string StudyAnonymizer::getPatientID() {
     }
 
     DcmDataset *dataset = m_fileformat.getDataset();
-    OFString patientID;
+    OFString patientID{}, studyInstanceUID{}, studyDate{}, modality{};
     (void)dataset->findAndGetOFString(DCM_PatientID, patientID);
-
+    (void)dataset->findAndGetOFString(DCM_StudyInstanceUID, studyInstanceUID);
+    (void)dataset->findAndGetOFString(DCM_StudyDate, studyDate);
+    (void)dataset->findAndGetOFString(DCM_Modality, modality);
     m_fileformat.clear();
-    return patientID.c_str();
+    return StudySQLFields(patientID.c_str(),
+                          studyInstanceUID.c_str(),
+                          studyDate.c_str(),
+                          modality.c_str());
 }

@@ -7,9 +7,15 @@
 #define DATABASE_HPP
 
 #include <string>
-#include <string_view>
 
 #include "sqlite_modern_cpp.h"
+
+struct StudySQLFields {
+    std::string patientID{};
+    std::string studyInstanceUID{};
+    std::string studyDate{};
+    std::string modality{};
+};
 
 class Database {
 public:
@@ -19,7 +25,7 @@ public:
 
     void createTable(const std::string& table_name);
     void setTableName(const std::string& table_name);
-    void insertRow(const std::string& patient_id, const std::string& pseudoname);
+    void insertRow(const StudySQLFields& , const std::string& pseudoname);
     std::string queryPseudoname(const std::string& query_id);
     std::string createPseudoname();
 

@@ -19,6 +19,8 @@
 #include "fmt/format.h"
 #include "fmt/ranges.h"
 
+#include "Database.hpp"
+
 extern OFLogger mainLogger;
 
 void setupLogger(std::string_view logger_name);
@@ -50,7 +52,7 @@ public:
 
     bool removeInvalidTags() const;
 
-    std::string getPatientID();
+    StudySQLFields getPatientID();
 
     E_FILENAMES m_filenameType{F_HEX};
     OFString    m_oldName{};

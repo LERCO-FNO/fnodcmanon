@@ -230,9 +230,9 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        const std::string currentPatientID = anonymizer.getPatientID();
+        const StudySQLFields sql_fields = anonymizer.getPatientID();
 
-        std::string pseudoname = database.queryPseudoname(currentPatientID);
+        std::string pseudoname = database.queryPseudoname(sql_fields.patientID);
         if (pseudoname.empty()) {
             pseudoname = database.createPseudoname();
         }
@@ -254,7 +254,7 @@ int main(int argc, char *argv[]) {
         }
 
         cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
-        database.insertRow(currentPatientID, pseudoname);
+        database.insertRow(sql_fields, pseudoname);
 
         // something bad happened
         if (!cond) {
