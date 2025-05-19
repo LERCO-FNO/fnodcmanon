@@ -12,7 +12,7 @@ void Database::createTable(const std::string& table_name) {
     "patient_id TEXT UNIQUE NOT NULL,"
     "pseudoname TEXT UNIQUE NOT NULL);";
     m_currentTableName = table_name;
-    fmt::print("Created table {}", m_currentTableName);
+    fmt::print("Created table {}\n", m_currentTableName);
 }
 
 void Database::setTableName(const std::string& table_name) {

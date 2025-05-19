@@ -4,7 +4,6 @@
 #include <set>
 
 #include "fmt/format.h"
-#include "fmt/os.h"
 
 #include "dcmtk/config/osconfig.h"
 #include "dcmtk/dcmdata/dctk.h"
@@ -85,7 +84,6 @@ int main(int argc, char *argv[]) {
     const char *opt_outDirectory{"./anonymized_output"};
     const char *opt_rootUID = FNO_UID_ROOT;
     E_FILENAMES opt_filenameType = F_HEX;
-    const char *opt_patientListFilename{"anonymized_patients.txt"};
 
     std::set<E_ANONYM_METHODS> opt_anonymizationMethods{M_113100};
 
@@ -126,11 +124,6 @@ int main(int argc, char *argv[]) {
                   "write modified files to output directory");
     cmd.addOption("--filename-hex", "-f", "use integers in hex format as filenames (default)");
     cmd.addOption("--filename-modality-sop", "+f", "use Modality and SOPInstanceUIDs as filenames");
-    cmd.addOption("--key-list",
-                  "-k",
-                  1,
-                  "filename: string",
-                  "set name of pre-post anonymization text file\n(default <out-directory>/anonymized_patients.txt)");
 
     prepareCmdLineArgs(argc, argv, FNO_CONSOLE_APPLICATION);
     if (app.parseCommandLine(cmd, argc, argv)) {
@@ -176,10 +169,6 @@ int main(int argc, char *argv[]) {
             app.checkValue(cmd.getValue(opt_outDirectory));
         }
 
-        if (cmd.findOption("--key-list")) {
-            app.checkValue(cmd.getValue(opt_patientListFilename));
-        }
-
         if (cmd.findOption("--filename-hex") && cmd.findOption("--filename-modality-sop")) {
             checkConflict(app, "--filename-hex", "--filename-modality-sop");
         }
@@ -217,19 +206,10 @@ int main(int argc, char *argv[]) {
     }
 
     StudyAnonymizer anonymizer{};
-
-    // format leading zeros in pseudoname -> _001, _0001 etc.
-    const int zeroWidth = formatDirCountWidth(opt_inDirectory);
-
-    anonymizer.m_patientListFilename = opt_patientListFilename;
-    anonymizer.m_filenameType        = opt_filenameType;
+    anonymizer.m_filenameType = opt_filenameType;
 
     (void) std::filesystem::create_directories(opt_outDirectory);
     OFLOG_INFO(mainLogger, fmt::format("Created output directory \"{}\"", opt_outDirectory));
-    // fmt::ostream keyListFile = fmt::output_file(fmt::format("{}/{}",
-    //                                                         opt_outDirectory,
-    //                                                         opt_patientListFilename));
-    // keyListFile.print("old name, old id, new name/id\n");
 
     if (!std::filesystem::exists("anonymized_patients.db")) {
         OFLOG_WARN(mainLogger, "Database \"anonymized_patients.db\" not found in working directory");
@@ -239,8 +219,6 @@ int main(int argc, char *argv[]) {
     Database database("anonymized_patients.db");
     database.createTable(opt_anonymizedPrefix);
 
-
-    int index{1};
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
         fmt::print("Anonymizing study {}\n", studyDir.path().stem().string());
 
@@ -258,10 +236,7 @@ int main(int argc, char *argv[]) {
         if (pseudoname.empty()) {
             pseudoname = database.createPseudoname();
         }
-        // const std::string pseudoname = fmt::format("{}{:0{}}",
-        //                                            opt_anonymizedPrefix,
-        //                                            index++,
-        //                                            zeroWidth);
+
         OFLOG_INFO(mainLogger, "Applying pseudoname " << pseudoname);
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
@@ -289,10 +264,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        // keyListFile.print("{},{},{}\n", anonymizer.m_oldName, anonymizer.m_oldID, pseudoname);
     }
-    // keyListFile.close();
-
 
     return 0;
 }

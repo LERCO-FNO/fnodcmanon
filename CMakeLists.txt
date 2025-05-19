@@ -20,7 +20,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
                            src/include
                            ${sqlmodern_DIR})
 
+link_directories(${SQLITE_LIB})
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
                       fmt::fmt
                       DCMTK::DCMTK
                       SQLite::SQLite3)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+                      LINK_FLAGS_Release-static "-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -lsqlite3 -Wl,-Bdynamic"
+                      )
