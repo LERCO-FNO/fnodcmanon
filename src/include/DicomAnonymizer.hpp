@@ -50,6 +50,8 @@ public:
 
     bool removeInvalidTags() const;
 
+    std::string getPatientID();
+
     E_FILENAMES m_filenameType{F_HEX};
     OFString    m_oldName{};
     OFString    m_oldID{};

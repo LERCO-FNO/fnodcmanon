@@ -13,6 +13,7 @@ OFLogger mainLogger = OFLog::getLogger("");
 
 void setupLogger(std::string_view logger_name) {
     mainLogger = OFLog::getLogger(logger_name.data());
+    // mainLogger.setLogLevel(OFLogger::LogLevel::INFO_LOG_LEVEL);
 };
 
 bool StudyAnonymizer::getStudyFilenames(const std::filesystem::path &study_directory) {
@@ -116,9 +117,9 @@ bool StudyAnonymizer::anonymizeStudy(const std::string                &pseudonam
         // m_dataset->findAndGetOFString(DCM_SeriesInstanceUID, oldSeriesUID);
         m_dataset->findAndGetString(DCM_SeriesInstanceUID, oldSeriesUID);
         // OFString newSeriesUID = this->getSeriesUids(oldSeriesUID, root).c_str();
-        const char *newSeriesUID = this->getSeriesUids(oldSeriesUID, root).c_str();
+        const std::string newSeriesUID = this->getSeriesUids(oldSeriesUID, root);
         // m_dataset->putAndInsertOFStringArray(DCM_SeriesInstanceUID, newSeriesUID);
-        m_dataset->putAndInsertString(DCM_SeriesInstanceUID, newSeriesUID);
+        m_dataset->putAndInsertString(DCM_SeriesInstanceUID, newSeriesUID.c_str());
 
         char newSOPInstanceUID[65];
         dcmGenerateUniqueIdentifier(newSOPInstanceUID, root);
@@ -190,4 +191,20 @@ bool StudyAnonymizer::removeInvalidTags() const {
     }
 
     return true;
+}
+
+std::string StudyAnonymizer::getPatientID() {
+    OFCondition cond = m_fileformat.loadFile(m_dicom_files[0].c_str());
+    if (cond.bad()) {
+        OFLOG_ERROR(mainLogger, "Unable to load file " << m_dicom_files[0].c_str());
+        OFLOG_ERROR(mainLogger, cond.text());
+        return {};
+    }
+
+    DcmDataset *dataset = m_fileformat.getDataset();
+    OFString patientID;
+    (void)dataset->findAndGetOFString(DCM_PatientID, patientID);
+
+    m_fileformat.clear();
+    return patientID.c_str();
 }

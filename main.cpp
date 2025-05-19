@@ -11,7 +11,10 @@
 #include "dcmtk/dcmdata/cmdlnarg.h"
 #include "dcmtk/ofstd/ofconapp.h"
 
+#include "Database.hpp"
+
 #include "DicomAnonymizer.hpp"
+
 
 void checkConflict(OFConsoleApplication &app, const char *first_opt, const char *second_opt) {
     const std::string str = fmt::format("{} not allowed with {}", first_opt, second_opt);
@@ -58,7 +61,7 @@ void printMethods() {
 
 int main(int argc, char *argv[]) {
     constexpr auto    FNO_CONSOLE_APPLICATION{"fnodcmanon"};
-    constexpr auto    APP_VERSION{"0.3.0"};
+    constexpr auto    APP_VERSION{"0.4.0"};
     constexpr auto    RELEASE_DATE{"2024-11-19"};
     const std::string rcsid = fmt::format("${}: ver. {} rel. {}\n$dcmtk: ver. {} rel.{}",
                                           FNO_CONSOLE_APPLICATION,
@@ -80,7 +83,7 @@ int main(int argc, char *argv[]) {
     // optional params
     const char *FNO_UID_ROOT{"1.2.840.113619.2"};
     const char *opt_outDirectory{"./anonymized_output"};
-    const char *opt_rootUID{nullptr};
+    const char *opt_rootUID = FNO_UID_ROOT;
     E_FILENAMES opt_filenameType = F_HEX;
     const char *opt_patientListFilename{"anonymized_patients.txt"};
 
@@ -119,7 +122,7 @@ int main(int argc, char *argv[]) {
     cmd.addOption("--out-directory",
                   "-od",
                   1,
-                  R"(directory: string (default "./anonymized_output")",
+                  "directory: string (default \"./anonymized_output\"",
                   "write modified files to output directory");
     cmd.addOption("--filename-hex", "-f", "use integers in hex format as filenames (default)");
     cmd.addOption("--filename-modality-sop", "+f", "use Modality and SOPInstanceUIDs as filenames");
@@ -215,7 +218,7 @@ int main(int argc, char *argv[]) {
 
     StudyAnonymizer anonymizer{};
 
-    // used to format leading zeros
+    // format leading zeros in pseudoname -> _001, _0001 etc.
     const int zeroWidth = formatDirCountWidth(opt_inDirectory);
 
     anonymizer.m_patientListFilename = opt_patientListFilename;
@@ -223,10 +226,19 @@ int main(int argc, char *argv[]) {
 
     (void) std::filesystem::create_directories(opt_outDirectory);
     OFLOG_INFO(mainLogger, fmt::format("Created output directory \"{}\"", opt_outDirectory));
-    fmt::ostream keyListFile = fmt::output_file(fmt::format("{}/{}",
-                                                            opt_outDirectory,
-                                                            opt_patientListFilename));
-    keyListFile.print("old name, old id, new name/id\n");
+    // fmt::ostream keyListFile = fmt::output_file(fmt::format("{}/{}",
+    //                                                         opt_outDirectory,
+    //                                                         opt_patientListFilename));
+    // keyListFile.print("old name, old id, new name/id\n");
+
+    if (!std::filesystem::exists("anonymized_patients.db")) {
+        OFLOG_WARN(mainLogger, "Database \"anonymized_patients.db\" not found in working directory");
+        OFLOG_WARN(mainLogger, "Creating database \"anonymized_patients.db\"\n");
+    }
+
+    Database database("anonymized_patients.db");
+    database.createTable(opt_anonymizedPrefix);
+
 
     int index{1};
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
@@ -240,10 +252,16 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        const std::string pseudoname = fmt::format("{}{:0{}}",
-                                                   opt_anonymizedPrefix,
-                                                   index++,
-                                                   zeroWidth);
+        const std::string currentPatientID = anonymizer.getPatientID();
+
+        std::string pseudoname = database.queryPseudoname(currentPatientID);
+        if (pseudoname.empty()) {
+            pseudoname = database.createPseudoname();
+        }
+        // const std::string pseudoname = fmt::format("{}{:0{}}",
+        //                                            opt_anonymizedPrefix,
+        //                                            index++,
+        //                                            zeroWidth);
         OFLOG_INFO(mainLogger, "Applying pseudoname " << pseudoname);
 
         anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
@@ -256,23 +274,24 @@ int main(int argc, char *argv[]) {
         } else {
             if (std::filesystem::create_directories(anonymizer.m_outputStudyDir))
                 OFLOG_INFO(mainLogger,
-                           fmt::format(R"(Created directory "{}"\n)", anonymizer.m_outputStudyDir).c_str()
+                           fmt::format("Created directory \"{}\"\n", anonymizer.m_outputStudyDir).c_str()
                            );
         }
 
         cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
+        database.insertRow(currentPatientID, pseudoname);
 
         // something bad happened
         if (!cond) {
             OFLOG_ERROR(mainLogger,
-                        fmt::format(R"(Failed to anonymize study: "{}"\n)", studyDir.path().stem().string()).c_str()
+                        fmt::format("Failed to anonymize study: \"{}\"\n", studyDir.path().stem().string()).c_str()
                        );
             continue;
         }
 
-        keyListFile.print("{},{},{}\n", anonymizer.m_oldName, anonymizer.m_oldID, pseudoname);
+        // keyListFile.print("{},{},{}\n", anonymizer.m_oldName, anonymizer.m_oldID, pseudoname);
     }
-    keyListFile.close();
+    // keyListFile.close();
 
 
     return 0;
