@@ -15,6 +15,8 @@ void Database::createTable(const std::string& table_name) {
     "pseudoname TEXT UNIQUE NOT NULL);";
     m_currentTableName = table_name;
     fmt::print("Created table {}\n", m_currentTableName);
+
+    m_database << "CREATE TABLE IF NOT EXISTS "
 }
 
 void Database::setTableName(const std::string& table_name) {
@@ -43,10 +45,15 @@ void Database::insertRow(const StudySQLFields& sql_fields, const std::string& ps
     const std::string existingPseudoname = queryPseudoname(sql_fields.patientID);
 
     if (existingPseudoname.empty()) {
-        m_database << "INSERT INTO " + m_currentTableName +
+        m_database << "INSERT OR IGNORE INTO " + m_currentTableName +
                 " (patient_id, pseudoname) VALUES (?, ?);"
                 << sql_fields.patientID
                 << pseudoname;
+        m_database << "INSERT INTO studies (patient_id, study_inst_uid, study_date, modality) VALUES (?, ?, ?, ?);"
+                << sql_fields.patientID
+                << sql_fields.studyInstanceUID
+                << sql_fields.studyDate
+                << sql_fields.modality;
         fmt::print("Table {}: added row patient_id={}, pseudoname={}, study_inst_uid={}, study_date={}, modality={}\n",
                    m_currentTableName,
                    sql_fields.patientID,
