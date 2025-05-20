@@ -8,70 +8,76 @@
 
 #include <DicomAnonymizer.hpp>
 
-void Database::createTable(const std::string& table_name) {
-    m_database << "CREATE TABLE IF NOT EXISTS " + table_name + " ("
-    "_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,"
-    "patient_id TEXT UNIQUE NOT NULL,"
-    "pseudoname TEXT UNIQUE NOT NULL);";
-    m_currentTableName = table_name;
-    fmt::print("Created table {}\n", m_currentTableName);
+void Database::createTable() {
+    m_database << "CREATE TABLE IF NOT EXISTS patients ("
+            "_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,"
+            "patient_id TEXT NOT NULL,"
+            "pseudoname TEXT NOT NULL,"
+            "group_name TEXT NOT NULL,"
+            "UNIQUE(patient_id, group_name)"
+            ");";
 
-    m_database << "CREATE TABLE IF NOT EXISTS "
+    m_database << "CREATE TABLE IF NOT EXISTS studies ("
+            "_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,"
+            "patient_id TEXT NOT NULL,"
+            "group_name TEXT NOT NULL,"
+            "study_inst_uid TEXT NOT NULL,"
+            "study_date TEXT NOT NULL,"
+            "modality TEXT NOT NULL,"
+            "FOREIGN KEY(patient_id, group_name) REFERENCES patients(patient_id, group_name), "
+            "UNIQUE(patient_id, group_name, study_inst_uid)"
+            ");";
+    m_database << "PRAGMA foreign_keys = ON;";
 }
 
-void Database::setTableName(const std::string& table_name) {
-    m_currentTableName = table_name;
-}
-
-std::string Database::queryPseudoname(const std::string& query_id) {
+std::string Database::queryPseudoname(const std::string& query_id, const std::string& group_name) {
     std::string pseudoname{};
 
-    m_database << "SELECT pseudoname FROM " + m_currentTableName + " WHERE patient_id=?;"
+    m_database << "SELECT pseudoname FROM patients WHERE patient_id=? AND group_name=?;"
             << query_id
+            << group_name
             >> [&](const std::string &psn) {
                 pseudoname = psn;
             };
 
     if (pseudoname.empty()) {
-        fmt::print("Table {}: row for patient_id={} not found\n", m_currentTableName, query_id);
+        fmt::print("row for patient_id={} not found in group={}\n", query_id, group_name);
     } else {
-        fmt::print("Table {}: patient_id={}, pseudoname={}\n", m_currentTableName, query_id, pseudoname);
+        fmt::print("patient_id={}, pseudoname={} exists in group={}\n", query_id, pseudoname, group_name);
     }
 
     return pseudoname;
 }
 
-void Database::insertRow(const StudySQLFields& sql_fields, const std::string& pseudoname) {
-    const std::string existingPseudoname = queryPseudoname(sql_fields.patientID);
+void Database::insertRow(const StudySQLFields &sql_fields,
+                         const std::string &   pseudoname,
+                         const std::string&    group_name) {
 
-    if (existingPseudoname.empty()) {
-        m_database << "INSERT OR IGNORE INTO " + m_currentTableName +
-                " (patient_id, pseudoname) VALUES (?, ?);"
-                << sql_fields.patientID
-                << pseudoname;
-        m_database << "INSERT INTO studies (patient_id, study_inst_uid, study_date, modality) VALUES (?, ?, ?, ?);"
-                << sql_fields.patientID
-                << sql_fields.studyInstanceUID
-                << sql_fields.studyDate
-                << sql_fields.modality;
-        fmt::print("Table {}: added row patient_id={}, pseudoname={}, study_inst_uid={}, study_date={}, modality={}\n",
-                   m_currentTableName,
-                   sql_fields.patientID,
-                   pseudoname,
-                   sql_fields.studyInstanceUID,
-                   sql_fields.studyDate,
-                   sql_fields.modality);
-    } else {
-        fmt::print("Table: row exists patient_id={}, pseudoname={}\n",
-                   m_currentTableName,
-                   sql_fields.patientID,
-                   pseudoname);
-    }
+    m_database << "INSERT OR IGNORE INTO patients (patient_id, pseudoname, group_name) VALUES (?, ?, ?);"
+            << sql_fields.patientID
+            << pseudoname
+            << group_name;
+    m_database << "INSERT OR IGNORE INTO studies (patient_id, group_name, study_inst_uid, study_date, modality) VALUES (?, ?, ?, ?, ?);"
+            << sql_fields.patientID
+            << group_name
+            << sql_fields.studyInstanceUID
+            << sql_fields.studyDate
+            << sql_fields.modality;
+    fmt::print("Added patient row patient_id={}, pseudoname={} to group={}\n",
+               sql_fields.patientID,
+               pseudoname,
+               group_name);
+    fmt::print("Added study row to patient_id={}, group={}\n", sql_fields.patientID, group_name);
+    fmt::print("\tstudy_inst_uid={}, study_date={}, modality={}\n",
+               sql_fields.studyInstanceUID,
+               sql_fields.studyDate,
+               sql_fields.modality);
 }
 
-std::string Database::createPseudoname() {
+std::string Database::createPseudoname(const std::string& group_name) {
     std::string pseudoname{};
-    m_database << "SELECT pseudoname FROM " + m_currentTableName + " ORDER BY pseudoname DESC LIMIT 1;"
+    m_database << "SELECT pseudoname FROM patients WHERE group_name=? ORDER BY pseudoname DESC LIMIT 1;"
+            << group_name
             >> [&](const std::string &psn) {
                 pseudoname = psn;
             };
@@ -80,5 +86,5 @@ std::string Database::createPseudoname() {
         std::size_t uspos = pseudoname.find('_');
         lastIndex = std::stoi(pseudoname.substr(++uspos));
     }
-    return fmt::format("{}_{}", m_currentTableName, ++lastIndex);
+    return fmt::format("{}_{}", group_name, ++lastIndex);
 }

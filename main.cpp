@@ -217,7 +217,7 @@ int main(int argc, char *argv[]) {
     }
 
     Database database("anonymized_patients.db");
-    database.createTable(opt_anonymizedPrefix);
+    database.createTable();
 
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
         fmt::print("Anonymizing study {}\n", studyDir.path().stem().string());
@@ -232,9 +232,9 @@ int main(int argc, char *argv[]) {
 
         const StudySQLFields sql_fields = anonymizer.getPatientID();
 
-        std::string pseudoname = database.queryPseudoname(sql_fields.patientID);
+        std::string pseudoname = database.queryPseudoname(sql_fields.patientID, opt_anonymizedPrefix);
         if (pseudoname.empty()) {
-            pseudoname = database.createPseudoname();
+            pseudoname = database.createPseudoname(opt_anonymizedPrefix);
         }
 
         OFLOG_INFO(mainLogger, "Applying pseudoname " << pseudoname);
@@ -254,7 +254,7 @@ int main(int argc, char *argv[]) {
         }
 
         cond = anonymizer.anonymizeStudy(pseudoname, opt_anonymizationMethods, opt_rootUID);
-        database.insertRow(sql_fields, pseudoname);
+        database.insertRow(sql_fields, pseudoname, opt_anonymizedPrefix);
 
         // something bad happened
         if (!cond) {

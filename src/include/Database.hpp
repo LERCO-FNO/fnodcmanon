@@ -23,11 +23,13 @@ public:
                                                           m_databasePath(database_path) {};
     ~Database() = default;
 
-    void createTable(const std::string& table_name);
-    void setTableName(const std::string& table_name);
-    void insertRow(const StudySQLFields& , const std::string& pseudoname);
-    std::string queryPseudoname(const std::string& query_id);
-    std::string createPseudoname();
+    void createTable();
+    void insertRow(const StudySQLFields &sql_fields,
+                   const std::string &   pseudoname,
+                   const std::string &   group_name);
+    std::string queryPseudoname(const std::string &query_id,
+                                const std::string& group_name);
+    std::string createPseudoname(const std::string& group_name);
 
 
 private:
