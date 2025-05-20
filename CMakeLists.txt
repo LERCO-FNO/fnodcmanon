@@ -3,6 +3,9 @@ project(fnodcmanon)
 
 set(CMAKE_CXX_STANDARD 20)
 
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-static -static-libgcc -static-libstdc++")
+set(sqlite3_dll_path ${sqlite3_dll})
+
 set(SOURCES
     main.cpp
     src/DicomAnonymizer.cpp
@@ -27,6 +30,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
                       DCMTK::DCMTK
                       SQLite::SQLite3)
 
-set_target_properties(${PROJECT_NAME} PROPERTIES
-                      LINK_FLAGS_Release-static "-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -lsqlite3 -Wl,-Bdynamic"
-                      )
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_custom_target(copy_sqlite3_dll ALL
+                      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                      "${sqlite3_dll}" $<TARGET_FILE_DIR:${PROJECT_NAME}>
+                      COMMENT "Copying SQLite3 DLL for Release build")
+    add_dependencies(${PROJECT_NAME} copy_sqlite3_dll)
+endif ()
