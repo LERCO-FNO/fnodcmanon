@@ -12,4 +12,4 @@ De-identification is based on methods explained in [PS3.16 2025a](https://dicom.
 ## Requirements
 * fmt v11.1 or newer
 * dcmtk v3.6.8 or newer
-
+* [sql_modern_cpp](https://github.com/SqliteModernCpp/sqlite_modern_cpp)
