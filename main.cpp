@@ -60,7 +60,7 @@ void printMethods() {
 
 int main(int argc, char *argv[]) {
     constexpr auto    FNO_CONSOLE_APPLICATION{"fnodcmanon"};
-    constexpr auto    APP_VERSION{"0.4.0"};
+    constexpr auto    APP_VERSION{"0.4.1"};
     constexpr auto    RELEASE_DATE{"2024-11-19"};
     const std::string rcsid = fmt::format("${}: ver. {} rel. {}\n$dcmtk: ver. {} rel.{}",
                                           FNO_CONSOLE_APPLICATION,
