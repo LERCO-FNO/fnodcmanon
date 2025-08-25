@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
 
         if (cmd.findOption("--anonym-method", 0, OFCommandLine::FOM_FirstFromLeft)) {
             do {
-                const char *method{nullptr};
+                OFString method{};
                 app.checkValue(cmd.getValue(method));
                 if (method == "DCM_113108") opt_anonymizationMethods.insert(M_113108);
                 if (method == "DCM_113109") opt_anonymizationMethods.insert(M_113109);
@@ -218,6 +218,7 @@ int main(int argc, char *argv[]) {
 
     Database database("anonymized_patients.db");
     database.createTable();
+    database.setLeadingZerosWidth(opt_inDirectory);
 
     for (const auto &studyDir : std::filesystem::directory_iterator(opt_inDirectory)) {
         fmt::print("Anonymizing study {}\n", studyDir.path().stem().string());
@@ -239,7 +240,7 @@ int main(int argc, char *argv[]) {
 
         OFLOG_INFO(mainLogger, "Applying pseudoname " << pseudoname);
 
-        anonymizer.m_outputStudyDir = fmt::format("{}/{}/DATA", opt_outDirectory, pseudoname);
+        anonymizer.m_outputStudyDir = fmt::format("{}/{}", opt_outDirectory, pseudoname);
 
         if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
             OFLOG_INFO(mainLogger,

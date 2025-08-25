@@ -19,8 +19,10 @@ struct StudySQLFields {
 
 class Database {
 public:
-    explicit Database(const std::string &database_path) : m_database(database_path),
-                                                          m_databasePath(database_path) {};
+    explicit Database(
+        const std::string &database_path) : m_database(database_path),
+                                            m_databasePath(database_path) {};
+
     ~Database() = default;
 
     void createTable();
@@ -30,12 +32,13 @@ public:
     std::string queryPseudoname(const std::string &query_id,
                                 const std::string& group_name);
     std::string createPseudoname(const std::string& group_name);
-
+    void setLeadingZerosWidth(const std::string& in_directory);
 
 private:
     sqlite::database m_database;
     std::string m_currentTableName{};
     std::string m_databasePath{};
+    int m_numberOfStudies{0};
 };
 
 #endif //DATABASE_HPP

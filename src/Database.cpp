@@ -86,5 +86,18 @@ std::string Database::createPseudoname(const std::string& group_name) {
         std::size_t uspos = pseudoname.find('_');
         lastIndex = std::stoi(pseudoname.substr(++uspos));
     }
-    return fmt::format("{}_{}", group_name, ++lastIndex);
+    return fmt::format("{0}_{1:0{2}}", group_name, ++lastIndex, m_numberOfStudies);
+}
+
+void Database::setLeadingZerosWidth(const std::string& in_directory) {
+
+    int studies_found{0};
+    for (const auto &studyDir : std::filesystem::directory_iterator(in_directory)) {
+        if (studyDir.is_directory()) {
+            studies_found++;
+        }
+    }
+
+    fmt::print("found {} studies to anonymize", studies_found);
+    m_numberOfStudies = static_cast<int>(std::to_string(studies_found).length());
 }
