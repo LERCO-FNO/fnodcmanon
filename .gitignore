@@ -1,0 +1,16 @@
+# IDE files
+.idea/
+.vscode/
+
+# build configurations
+CMakePresets.json
+
+# build files
+build-*/
+cmake-build-debug/
+cmake-build-release/
+
+# test data
+test_data/
+test_data2/
+test_output/
