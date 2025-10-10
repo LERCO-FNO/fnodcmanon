@@ -13,8 +13,8 @@
 #include <vector>
 
 #include "dcmtk/dcmdata/dcdatset.h"
-
 #include "dcmtk/dcmdata/dcfilefo.h"
+#include "dcmtk/ofstd/ofcond.h"
 
 extern OFLogger mainLogger;
 
@@ -29,33 +29,39 @@ enum E_ADDIT_ANONYM_METHODS {
   M_113112  // Retain Institution Identity Option
 };
 
+enum E_PSEUDONAME_TYPE { P_RANDOM_STRING, P_INTEGER_ORDER, P_FROM_FILE };
+
 class StudyAnonymizer {
 public:
   StudyAnonymizer() = default;
 
   ~StudyAnonymizer() = default;
 
-  bool getStudyFilenames(const std::filesystem::path &study_directory);
+  OFCondition findDicomFiles(const std::filesystem::path &study_directory);
 
-  bool anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
-                      const char *root = nullptr);
+  OFCondition anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
+                             const char *root = nullptr);
   void anonymizeBasicProfile();
   void anonymizePatientCharacteristicsProfile();
   void anonymizeInstitutionProfile();
   void anonymizeDeviceProfile();
+  void setPseudoname(const char *prefix);
+  void setPseudoname(const char *prefix, int count, int count_width);
+  void setPseudoname(const char *prefix, const std::string &pseudoname);
 
   std::string getSeriesUids(const std::string &old_series_uid,
                             const char *root = nullptr);
 
-  bool removeInvalidTags() const;
-  bool setBasicTags();
-  void writeTags() const;
+  OFCondition removeInvalidTags() const;
+  OFCondition setBasicTags();
+  OFCondition writeTags() const;
 
   E_FILENAMES m_filenameType{F_HEX};
-  OFString m_pseudoname{};
+  E_PSEUDONAME_TYPE m_pseudonameType{P_RANDOM_STRING};
+  std::string m_pseudoname{};
   OFString m_oldName{};
   OFString m_oldID{};
-  OFString m_studyuid{};
+  OFString m_old_studyuid{};
   OFString m_studydate{};
   std::string m_outputStudyDir{};
   std::string m_patientListFilename{};

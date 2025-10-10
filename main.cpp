@@ -1,9 +1,11 @@
 #include <array>
+// #include <concurrencysal.h>
 #include <filesystem>
 #include <fstream>
 #include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "fmt/format.h"
 
@@ -11,6 +13,7 @@
 #include "dcmtk/dcmdata/cmdlnarg.h"
 #include "dcmtk/dcmdata/dctk.h"
 #include "dcmtk/ofstd/ofconapp.h"
+#include "dcmtk/ofstd/ofcond.h"
 #include "dcmtk/ofstd/ofexit.h"
 
 #include "DicomAnonymizer.hpp"
@@ -27,6 +30,17 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt,
   const std::string str = fmt::format("{}, {} and {} not allowed together",
                                       first_opt, second_opt, third_opt);
   app.printError(str.c_str(), EXITCODE_COMMANDLINE_SYNTAX_ERROR);
+};
+
+std::vector<std::filesystem::path> findStudyDirectories(const char *root_path) {
+  std::vector<std::filesystem::path> dirs{};
+
+  for (const auto &entry : std::filesystem::directory_iterator(root_path)) {
+    if (entry.is_directory()) {
+      dirs.push_back(entry.path());
+    }
+  }
+  return dirs;
 };
 
 int getPseudonameLeadingZeroesWidth(const char *opt_inDirectory) {
@@ -83,7 +97,7 @@ void printMethods() {
 void writeAllStudyTags(std::ofstream &file, const StudyAnonymizer &anonymizer) {
   file << fmt::format("{},{},{},{},{}\n", anonymizer.m_oldID,
                       anonymizer.m_oldName, anonymizer.m_pseudoname,
-                      anonymizer.m_studyuid, anonymizer.m_studydate);
+                      anonymizer.m_old_studyuid, anonymizer.m_studydate);
 };
 
 int main(int argc, char *argv[]) {
@@ -106,9 +120,12 @@ int main(int argc, char *argv[]) {
   // optional params
   const char *FNO_UID_ROOT{"1.2.840.113619.2"};
   const char *opt_outDirectory{"./anonymized_output"};
-  const char *opt_rootUID = FNO_UID_ROOT;
-  E_FILENAMES opt_filenameType = F_HEX;
+  const char *opt_rootUID{FNO_UID_ROOT};
 
+  E_PSEUDONAME_TYPE opt_pseudonameType = P_RANDOM_STRING;
+  const char *opt_pseudonameFile{nullptr};
+
+  E_FILENAMES opt_filenameType = F_HEX;
   std::set<E_ADDIT_ANONYM_METHODS> opt_anonymizationMethods{};
 
   constexpr int LONGCOL{20};
@@ -129,6 +146,20 @@ int main(int argc, char *argv[]) {
   OFLog::addOptions(cmd);
 
   cmd.addGroup("anonymization options:");
+  cmd.addSubGroup("pseudoname options:");
+
+  cmd.addOption("--pseudoname-random", "-pr",
+                "generate random alphanumeric string (lower/upper "
+                "case + digits + duplicates) and append to "
+                "<anonymized-prefix> (default)");
+  cmd.addOption("--pseudoname-integer", "-pc",
+                "append integer (start at 0) to <anonymized-prefix>; may "
+                "overwrite existing files");
+  cmd.addOption("--pseudoname-file", "-pf", 1, "file: path/to/.csv",
+                "read .csv with existing pseudonames (excluding "
+                "<anonymized-prefix>) and append to <anonymized-prefix>");
+
+  cmd.addSubGroup("anonymization profiles:");
   cmd.addOption("--profile-patient-tags", "-ppt",
                 "retain patient characteristics option");
   cmd.addOption("--profile-device-tags", "-pdt",
@@ -138,6 +169,8 @@ int main(int argc, char *argv[]) {
   cmd.addOption("--print-anon-profiles",
                 "print deidentification profiles for example tags",
                 OFCommandLine::AF_Exclusive);
+
+  cmd.addSubGroup("root UID options:");
   cmd.addOption(
       "--fno-uid-root", "-fuid",
       fmt::format("use FNO UID root: {} (default)", FNO_UID_ROOT).c_str());
@@ -172,6 +205,17 @@ int main(int argc, char *argv[]) {
     cmd.getParam(2, opt_anonymizedPrefix);
 
     OFLog::configureFromCommandLine(cmd, app);
+
+    cmd.beginOptionBlock();
+    if (cmd.findOption("--pseudoname-random"))
+      opt_pseudonameType = P_RANDOM_STRING;
+    if (cmd.findOption("--pseudoname-integer"))
+      opt_pseudonameType = P_INTEGER_ORDER;
+    if (cmd.findOption("--pseudoname-file")) {
+      opt_pseudonameType = P_FROM_FILE;
+      app.checkValue(cmd.getValue(opt_pseudonameFile));
+    }
+    cmd.endOptionBlock();
 
     if (cmd.findOption("--fno-uid-root") &&
         cmd.findOption("--offis-uid-root") &&
@@ -261,26 +305,34 @@ int main(int argc, char *argv[]) {
   outputAnonymFile
       << "PatientID,PatientName,Pseudoname,StudyInstanceUID,StudyDate\n";
 
+  std::vector<std::filesystem::path> studyDirs =
+      findStudyDirectories(opt_inDirectory);
+
   int pseudonameCount{1};
   int pseudonameLeadingZeroesWidth =
-      getPseudonameLeadingZeroesWidth(opt_inDirectory);
-  for (const auto &studyDir :
-       std::filesystem::directory_iterator(opt_inDirectory)) {
-    fmt::print("Anonymizing study `{}`\n", studyDir.path().stem().string());
+      static_cast<unsigned int>(std::to_string(studyDirs.size()).length());
 
-    bool cond = anonymizer.getStudyFilenames(studyDir.path());
-    if (!cond) {
-      OFLOG_ERROR(mainLogger,
-                  fmt::format("Failed to get study file names from `{}`",
-                              studyDir.path().string())
-                      .c_str());
+  for (const auto &study_dir : studyDirs) {
+    fmt::print("Anonymizing study `{}`\n", study_dir.stem().string());
+
+    OFCondition cond{};
+    cond = anonymizer.findDicomFiles(study_dir);
+    if (cond.bad()) {
       continue;
     }
 
-    anonymizer.m_pseudoname =
-        fmt::format("{0}{1:0{2}}", opt_anonymizedPrefix, pseudonameCount,
-                    pseudonameLeadingZeroesWidth);
-    ++pseudonameCount;
+    if (opt_pseudonameType == P_RANDOM_STRING) {
+      anonymizer.setPseudoname(opt_anonymizedPrefix);
+
+    } else if (opt_pseudonameType == P_INTEGER_ORDER) {
+      anonymizer.setPseudoname(opt_anonymizedPrefix, pseudonameCount,
+                               pseudonameLeadingZeroesWidth);
+      ++pseudonameCount;
+
+    } else if (opt_pseudonameType == P_FROM_FILE) {
+      // TODO: finish reading csv file with pseudonames and assigning
+      anonymizer.setPseudoname(opt_anonymizedPrefix);
+    }
 
     OFLOG_INFO(mainLogger, "Applying pseudoname " << anonymizer.m_pseudoname);
 
@@ -303,10 +355,10 @@ int main(int argc, char *argv[]) {
     cond = anonymizer.anonymizeStudy(opt_anonymizationMethods, opt_rootUID);
 
     // something bad happened
-    if (!cond) {
-      OFLOG_ERROR(mainLogger, fmt::format("Failed to anonymize study: `{}`\n",
-                                          studyDir.path().stem().string())
-                                  .c_str());
+    if (cond.bad()) {
+      const std::string msg = fmt::format(
+          "error while anonymizing study: `{}`\n", study_dir.string());
+      OFLOG_ERROR(mainLogger, msg.c_str());
       continue;
     }
 

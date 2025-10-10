@@ -1,15 +1,17 @@
 //
 // Created by Vojtěch on 18.03.2025.
 //
+// #include <dcmtk/ofstd/ofconsol.h>
+// #include <dcmtk/ofstd/oftypes.h>
 #include <fstream>
-#include <set>
+#include <random>
 
 #include "dcmtk/dcmdata/dcdeftag.h"
 #include "dcmtk/dcmdata/dctagkey.h"
 #include "dcmtk/dcmdata/dcuid.h"
 #include "dcmtk/oflog/oflog.h"
-#include "dcmtk/ofstd/ofcond.h"
 
+#include "dcmtk/ofstd/ofcond.h"
 #include "fmt/format.h"
 
 #include "DicomAnonymizer.hpp"
@@ -20,8 +22,23 @@ void setupLogger(std::string_view logger_name) {
   mainLogger = OFLog::getLogger(logger_name.data());
 };
 
-bool StudyAnonymizer::getStudyFilenames(
-    const std::filesystem::path &study_directory) {
+std::string generate_random_string() {
+  static constexpr std::string_view chars{"abcdefghijklmnopqrstuvwxyz"
+                                          "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                          "0123456789"};
+  static std::mt19937_64 rng{std::random_device{}()};
+  std::uniform_int_distribution<std::size_t> dist(0, chars.size() - 1);
+
+  std::string retval(10, '\0');
+  for (char &c : retval) {
+    c = chars[dist(rng)];
+  }
+
+  return retval;
+};
+
+OFCondition
+StudyAnonymizer::findDicomFiles(const std::filesystem::path &study_directory) {
 
   // remove previous filenames and series uids when iterating over new study
   // directory
@@ -38,17 +55,23 @@ bool StudyAnonymizer::getStudyFilenames(
     m_dicom_files.push_back(entry.path().string());
   }
 
+  OFCondition cond{};
   if (m_dicom_files.empty()) {
-    OFLOG_ERROR(mainLogger, "No files found");
-    return false;
+    const std::string msg =
+        fmt::format("no dicom files found in `{}`", study_directory.string());
+    OFLOG_WARN(mainLogger, msg.c_str());
+    return {0, 0, OF_failure, msg.c_str()};
   }
 
   fmt::print("Found {} files\n", m_dicom_files.size());
-  return true;
+  return EC_Normal;
 }
 
-bool StudyAnonymizer::anonymizeStudy(
-    const std::set<E_ADDIT_ANONYM_METHODS> &methods, const char *root) {
+OFCondition
+StudyAnonymizer::anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
+                                const char *root) {
+
+  OFCondition cond{};
 
   char newStudyUID[65];
   dcmGenerateUniqueIdentifier(newStudyUID, root);
@@ -59,7 +82,7 @@ bool StudyAnonymizer::anonymizeStudy(
     if (cond.bad()) {
       OFLOG_ERROR(mainLogger, "Unable to load file " << file.c_str());
       OFLOG_ERROR(mainLogger, cond.text());
-      return false;
+      return cond;
     }
 
     m_dataset = m_fileformat.getDataset();
@@ -104,9 +127,11 @@ bool StudyAnonymizer::anonymizeStudy(
 
     m_dataset->putAndInsertOFStringArray(DCM_StudyInstanceUID, newStudyUID);
 
-    if (!this->removeInvalidTags()) {
+    cond = this->removeInvalidTags();
+
+    if (cond.bad()) {
       OFLOG_ERROR(mainLogger, "Error occured while removing invalid tags");
-      return false;
+      return cond;
     }
     const E_TransferSyntax xfer = m_dataset->getCurrentXfer();
     m_dataset->chooseRepresentation(xfer, nullptr);
@@ -127,78 +152,93 @@ bool StudyAnonymizer::anonymizeStudy(
     if (cond.bad()) {
       fmt::print("Unable to save file {}\n", file);
       fmt::print("Reason: {}\n", cond.text());
-      return false;
+      return cond;
     }
     ++fileNumber;
   }
 
   // this->writeTags();
 
-  return true;
+  return cond;
 }
 
 void StudyAnonymizer::anonymizeBasicProfile() {
   // basic patient tags
-  m_dataset->putAndInsertOFStringArray(DCM_PatientName, m_pseudoname.c_str());
-  m_dataset->putAndInsertOFStringArray(DCM_PatientID, m_pseudoname.c_str());
+  m_dataset->putAndInsertOFStringArray(DCM_PatientName, m_pseudoname);
+  m_dataset->putAndInsertOFStringArray(DCM_PatientID, m_pseudoname);
   m_dataset->putAndInsertString(DCM_PatientSex, "O");
-
-  delete m_dataset->remove(DCM_PatientAddress);
-  delete m_dataset->remove(DCM_AdditionalPatientHistory);
-  delete m_dataset->remove(DCM_PatientInstitutionResidence);
+  m_dataset->findAndDeleteElement(DCM_PatientAddress);
+  m_dataset->findAndDeleteElement(DCM_AdditionalPatientHistory);
+  m_dataset->findAndDeleteElement(DCM_PatientInstitutionResidence);
 
   // other institution staff - operator, physicians
   m_dataset->putAndInsertString(DCM_ConsultingPhysicianName, "");
-  delete m_dataset->remove(DCM_ConsultingPhysicianIdentificationSequence);
-  delete m_dataset->remove(DCM_OperatorsName);
-  delete m_dataset->remove(DCM_NameOfPhysiciansReadingStudy);
-  delete m_dataset->remove(DCM_PerformingPhysicianName);
-  delete m_dataset->remove(DCM_PerformingPhysicianIdentificationSequence);
-  delete m_dataset->remove(DCM_PhysiciansOfRecord);
-  delete m_dataset->remove(DCM_PhysiciansOfRecordIdentificationSequence);
-  delete m_dataset->remove(DCM_ReferringPhysicianName);
-  delete m_dataset->remove(DCM_ReferringPhysicianAddress);
-  delete m_dataset->remove(DCM_ReferringPhysicianIdentificationSequence);
-  delete m_dataset->remove(DCM_ReferringPhysicianTelephoneNumbers);
-  delete m_dataset->remove(DCM_RequestingPhysician);
-  delete m_dataset->remove(DCM_ScheduledPerformingPhysicianName);
-  delete m_dataset->remove(
+  m_dataset->findAndDeleteElement(
+      DCM_ConsultingPhysicianIdentificationSequence);
+  m_dataset->findAndDeleteElement(DCM_OperatorsName);
+  m_dataset->findAndDeleteElement(DCM_NameOfPhysiciansReadingStudy);
+  m_dataset->findAndDeleteElement(DCM_PerformingPhysicianName);
+  m_dataset->findAndDeleteElement(
+      DCM_PerformingPhysicianIdentificationSequence);
+  m_dataset->findAndDeleteElement(DCM_PhysiciansOfRecord);
+  m_dataset->findAndDeleteElement(DCM_PhysiciansOfRecordIdentificationSequence);
+  m_dataset->findAndDeleteElement(DCM_ReferringPhysicianName);
+  m_dataset->findAndDeleteElement(DCM_ReferringPhysicianAddress);
+  m_dataset->findAndDeleteElement(DCM_ReferringPhysicianIdentificationSequence);
+  m_dataset->findAndDeleteElement(DCM_ReferringPhysicianTelephoneNumbers);
+  m_dataset->findAndDeleteElement(DCM_RequestingPhysician);
+  m_dataset->findAndDeleteElement(DCM_ScheduledPerformingPhysicianName);
+  m_dataset->findAndDeleteElement(
       DCM_ScheduledPerformingPhysicianIdentificationSequence);
 };
 
 void StudyAnonymizer::anonymizePatientCharacteristicsProfile() {
-  delete m_dataset->remove(DCM_Allergies);
-  delete m_dataset->remove(DCM_PatientAge);
-  delete m_dataset->remove(DCM_PatientSexNeutered);
-  delete m_dataset->remove(DCM_PatientSize);
-  delete m_dataset->remove(DCM_PatientWeight);
-  delete m_dataset->remove(DCM_PatientState);
-  delete m_dataset->remove(DCM_PregnancyStatus);
-  delete m_dataset->remove(DCM_PreMedication);
-  delete m_dataset->remove(DCM_SmokingStatus);
-  delete m_dataset->remove(DCM_SpecialNeeds);
+  m_dataset->findAndDeleteElement(DCM_Allergies);
+  m_dataset->findAndDeleteElement(DCM_PatientAge);
+  m_dataset->findAndDeleteElement(DCM_PatientSexNeutered);
+  m_dataset->findAndDeleteElement(DCM_PatientSize);
+  m_dataset->findAndDeleteElement(DCM_PatientWeight);
+  m_dataset->findAndDeleteElement(DCM_PatientState);
+  m_dataset->findAndDeleteElement(DCM_PregnancyStatus);
+  m_dataset->findAndDeleteElement(DCM_PreMedication);
+  m_dataset->findAndDeleteElement(DCM_SmokingStatus);
+  m_dataset->findAndDeleteElement(DCM_SpecialNeeds);
 };
 
 void StudyAnonymizer::anonymizeInstitutionProfile() {
-  delete m_dataset->remove(DCM_InstitutionAddress);
-  delete m_dataset->remove(DCM_InstitutionName);
-  delete m_dataset->remove(DCM_InstitutionalDepartmentName);
-  delete m_dataset->remove(DCM_InstitutionalDepartmentTypeCodeSequence);
-  delete m_dataset->remove(DCM_InstitutionCodeSequence);
+  m_dataset->findAndDeleteElement(DCM_InstitutionAddress);
+  m_dataset->findAndDeleteElement(DCM_InstitutionName);
+  m_dataset->findAndDeleteElement(DCM_InstitutionalDepartmentName);
+  m_dataset->findAndDeleteElement(DCM_InstitutionalDepartmentTypeCodeSequence);
+  m_dataset->findAndDeleteElement(DCM_InstitutionCodeSequence);
 };
 
 void StudyAnonymizer::anonymizeDeviceProfile() {
-  delete m_dataset->remove(DCM_DeviceDescription);
-  delete m_dataset->remove(DCM_DeviceLabel);
-  delete m_dataset->remove(DCM_DeviceSerialNumber);
-  delete m_dataset->remove(DCM_ManufacturerDeviceIdentifier);
-  delete m_dataset->remove(DCM_PerformedStationName);
-  delete m_dataset->remove(DCM_PerformedStationNameCodeSequence);
-  delete m_dataset->remove(DCM_ScheduledStationName);
-  delete m_dataset->remove(DCM_ScheduledStationNameCodeSequence);
-  delete m_dataset->remove(DCM_SourceManufacturer);
-  delete m_dataset->remove(DCM_SourceSerialNumber);
-  delete m_dataset->remove(DCM_StationName);
+  m_dataset->findAndDeleteElement(DCM_DeviceDescription);
+  m_dataset->findAndDeleteElement(DCM_DeviceLabel);
+  m_dataset->findAndDeleteElement(DCM_DeviceSerialNumber);
+  m_dataset->findAndDeleteElement(DCM_ManufacturerDeviceIdentifier);
+  m_dataset->findAndDeleteElement(DCM_PerformedStationName);
+  m_dataset->findAndDeleteElement(DCM_PerformedStationNameCodeSequence);
+  m_dataset->findAndDeleteElement(DCM_ScheduledStationName);
+  m_dataset->findAndDeleteElement(DCM_ScheduledStationNameCodeSequence);
+  m_dataset->findAndDeleteElement(DCM_SourceManufacturer);
+  m_dataset->findAndDeleteElement(DCM_SourceSerialNumber);
+  m_dataset->findAndDeleteElement(DCM_StationName);
+};
+
+void StudyAnonymizer::setPseudoname(const char *prefix) {
+  m_pseudoname = fmt::format("{}{}", prefix, generate_random_string());
+};
+
+void StudyAnonymizer::setPseudoname(const char *prefix, int count,
+                                    int count_width) {
+  m_pseudoname = fmt::format("{0}{1:0{2}}", prefix, count, count_width);
+};
+
+void StudyAnonymizer::setPseudoname(const char *prefix,
+                                    const std::string &pseudoname) {
+
 };
 
 std::string StudyAnonymizer::getSeriesUids(const std::string &old_series_uid,
@@ -216,12 +256,14 @@ std::string StudyAnonymizer::getSeriesUids(const std::string &old_series_uid,
   return m_series_uids[old_series_uid];
 };
 
-bool StudyAnonymizer::removeInvalidTags() const {
+OFCondition StudyAnonymizer::removeInvalidTags() const {
 
+  OFCondition cond{};
   // sanity check
   if (m_dataset == nullptr) {
-    OFLOG_ERROR(mainLogger, "Dataset is nullptr");
-    return false;
+    cond = {0, 0, OF_error, "dataset is nullptr"};
+    OFLOG_ERROR(mainLogger, cond.text());
+    return cond;
   }
 
   for (unsigned long i = 0; i < m_dataset->card(); ++i) {
@@ -230,41 +272,43 @@ bool StudyAnonymizer::removeInvalidTags() const {
     const DcmTagKey tagKey = DcmTagKey(element->getGTag(), element->getETag());
     const std::string tagName = tag.getTagName();
     if (tagName == "Unknown Tag & Data") {
-      delete m_dataset->remove(tagKey);
-      --i; // decrement due to ->remove reducing total number of tags
+      m_dataset->findAndDeleteElement(tagKey);
+      --i; // decrement due to deleting total number of tags
     }
   }
 
-  return true;
+  return cond;
 };
 
-bool StudyAnonymizer::setBasicTags() {
+OFCondition StudyAnonymizer::setBasicTags() {
   OFCondition cond = m_fileformat.loadFile(m_dicom_files[0].c_str());
   if (cond.bad()) {
     OFLOG_ERROR(mainLogger, "Unable to load file " << m_dicom_files[0].c_str());
     OFLOG_ERROR(mainLogger, cond.text());
-    return false;
+    return cond;
   }
 
-  m_fileformat.getDataset()->findAndGetOFString(DCM_PatientID, m_oldID);
-  m_fileformat.getDataset()->findAndGetOFString(DCM_PatientName, m_oldName);
-  m_fileformat.getDataset()->findAndGetOFString(DCM_StudyInstanceUID,
-                                                m_studyuid);
-  m_fileformat.getDataset()->findAndGetOFString(DCM_StudyDate, m_studydate);
+  DcmDataset *ds = m_fileformat.getDataset();
+  ds->findAndGetOFString(DCM_PatientID, m_oldID);
+  ds->findAndGetOFString(DCM_PatientName, m_oldName);
+  ds->findAndGetOFString(DCM_StudyInstanceUID, m_old_studyuid);
+  ds->findAndGetOFString(DCM_StudyDate, m_studydate);
+  ds = nullptr;
   m_fileformat.clear();
-  return true;
+  return cond;
 }
 
-void StudyAnonymizer::writeTags() const {
+OFCondition StudyAnonymizer::writeTags() const {
   std::ofstream csvfile{m_outputStudyDir + "/tags.csv", std::ios::out};
   if (!csvfile.is_open()) {
     OFLOG_ERROR(mainLogger, "error while creating `tags.csv`");
-    return;
+    return {0, 0, OF_error, "error while creating `tags.csv`"};
   }
-  csvfile << "PatientID,PatientName,Pseudoname,StudyInstanceUID,StudyDate\n";
 
+  csvfile << "PatientID,PatientName,Pseudoname,StudyInstanceUID,StudyDate\n";
   csvfile << fmt::format("{},{},{},{},{}\n", m_oldID, m_oldName, m_pseudoname,
-                         m_studyuid, m_studydate);
+                         m_old_studyuid, m_studydate);
 
   csvfile.close();
+  return {EC_Normal};
 };
