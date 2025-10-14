@@ -1,5 +1,4 @@
 #include <array>
-// #include <concurrencysal.h>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -9,9 +8,9 @@
 
 #include "fmt/format.h"
 
-// #include "dcmtk/config/osconfig.h"
 #include "dcmtk/dcmdata/cmdlnarg.h"
 #include "dcmtk/dcmdata/dctk.h"
+#include "dcmtk/oflog/oflog.h"
 #include "dcmtk/ofstd/ofconapp.h"
 #include "dcmtk/ofstd/ofcond.h"
 #include "dcmtk/ofstd/ofexit.h"
@@ -94,12 +93,6 @@ void printMethods() {
   }
 };
 
-void writeAllStudyTags(std::ofstream &file, const StudyAnonymizer &anonymizer) {
-  file << fmt::format("{},{},{},{},{}\n", anonymizer.m_oldID,
-                      anonymizer.m_oldName, anonymizer.m_pseudoname,
-                      anonymizer.m_old_studyuid, anonymizer.m_studydate);
-};
-
 int main(int argc, char *argv[]) {
   constexpr auto FNO_CONSOLE_APPLICATION{"fnodcmanon"};
   constexpr auto APP_VERSION{"0.4.2"};
@@ -114,15 +107,19 @@ int main(int argc, char *argv[]) {
   OFCommandLine cmd;
 
   // required params
+  // FIXME: replace with OFString
   const char *opt_inDirectory{nullptr};
-  const char *opt_anonymizedPrefix{nullptr};
+  OFString opt_anonymizedPrefix{};
 
   // optional params
+  // FIXME: replace with OFString
   const char *FNO_UID_ROOT{"1.2.840.113619.2"};
   const char *opt_outDirectory{"./anonymized_output"};
   const char *opt_rootUID{FNO_UID_ROOT};
 
   E_PSEUDONAME_TYPE opt_pseudonameType = P_RANDOM_STRING;
+
+  // FIXME: replace with OFString
   const char *opt_pseudonameFile{nullptr};
 
   E_FILENAMES opt_filenameType = F_HEX;
@@ -132,9 +129,9 @@ int main(int argc, char *argv[]) {
   constexpr int SHORTCOL{4};
   cmd.setParamColumn(LONGCOL + SHORTCOL + 4);
   cmd.addParam("in-directory", "input directory with DICOM studies");
-  cmd.addParam(
-      "anonymized-prefix",
-      "pseudoname prefix overwriting DICOM tags PatientID, PatientName");
+  // cmd.addParam(
+  //     "anonymized-prefix",
+  //     "pseudoname prefix overwriting DICOM tags PatientID, PatientName");
 
   cmd.setOptionColumns(LONGCOL, SHORTCOL);
   cmd.addGroup("general options:", LONGCOL, SHORTCOL + 2);
@@ -146,18 +143,19 @@ int main(int argc, char *argv[]) {
   OFLog::addOptions(cmd);
 
   cmd.addGroup("anonymization options:");
-  cmd.addSubGroup("pseudoname options:");
-
+  cmd.addOption("--prefix", "-p", 1, "string: prefix (default `UN`)",
+                "pseudoname prefix to use for constructing pseudonames");
+  cmd.addSubGroup("pseudoname suffix options:");
   cmd.addOption("--pseudoname-random", "-pr",
                 "generate random alphanumeric string (lower/upper "
                 "case + digits + duplicates) and append to "
                 "<anonymized-prefix> (default)");
-  cmd.addOption("--pseudoname-integer", "-pc",
+  cmd.addOption("--pseudoname-integer", "-pi",
                 "append integer (start at 0) to <anonymized-prefix>; may "
                 "overwrite existing files");
-  cmd.addOption("--pseudoname-file", "-pf", 1, "file: path/to/.csv",
-                "read .csv with existing pseudonames (excluding "
-                "<anonymized-prefix>) and append to <anonymized-prefix>");
+  cmd.addOption(
+      "--pseudoname-file", "-pf", 1, "file: path/to/.csv",
+      "read .csv with existing pseudonames and append to <anonymized-prefix>");
 
   cmd.addSubGroup("anonymization profiles:");
   cmd.addOption("--profile-patient-tags", "-ppt",
@@ -202,9 +200,12 @@ int main(int argc, char *argv[]) {
     }
 
     cmd.getParam(1, opt_inDirectory);
-    cmd.getParam(2, opt_anonymizedPrefix);
+    // cmd.getParam(2, opt_anonymizedPrefix);
 
     OFLog::configureFromCommandLine(cmd, app);
+
+    if (cmd.findOption("--prefix"))
+      app.checkValue(cmd.getValue(opt_anonymizedPrefix));
 
     cmd.beginOptionBlock();
     if (cmd.findOption("--pseudoname-random"))
@@ -275,94 +276,83 @@ int main(int argc, char *argv[]) {
 
   if (std::filesystem::exists(opt_inDirectory)) {
     if (!std::filesystem::is_directory(opt_inDirectory)) {
-      OFLOG_ERROR(mainLogger, fmt::format("Invalid path, not directory `{}`",
+      OFLOG_ERROR(mainLogger, fmt::format("invalid path, not directory `{}`",
                                           opt_inDirectory));
       return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
     if (std::filesystem::is_empty(opt_inDirectory)) {
       OFLOG_ERROR(mainLogger,
-                  fmt::format("Invalid directory, empty directory `{}`",
+                  fmt::format("invalid directory, empty directory `{}`",
                               opt_inDirectory));
       return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
   } else {
     OFLOG_ERROR(
         mainLogger,
-        fmt::format("Invalid path, directory not found `{}`", opt_inDirectory));
+        fmt::format("invalid path, directory not found `{}`", opt_inDirectory));
     return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
   }
-
-  StudyAnonymizer anonymizer{};
-  anonymizer.m_filenameType = opt_filenameType;
-
-  (void)std::filesystem::create_directories(opt_outDirectory);
-  OFLOG_INFO(mainLogger,
-             fmt::format("Created output directory `{}`", opt_outDirectory));
-
-  std::ofstream outputAnonymFile{
-      std::string(opt_outDirectory) + "/anonym_output.csv", std::ios::out};
-  outputAnonymFile
-      << "PatientID,PatientName,Pseudoname,StudyInstanceUID,StudyDate\n";
 
   std::vector<std::filesystem::path> studyDirs =
       findStudyDirectories(opt_inDirectory);
 
-  int pseudonameCount{1};
-  int pseudonameLeadingZeroesWidth =
-      static_cast<unsigned int>(std::to_string(studyDirs.size()).length());
+  StudyAnonymizer anonymizer{opt_anonymizedPrefix, opt_pseudonameType,
+                             opt_filenameType};
+
+  if (anonymizer.m_pseudoname_type == P_INTEGER_ORDER) {
+    fmt::print("using pseudonames as integer count order\n");
+    anonymizer.m_count_width =
+        static_cast<unsigned short>(std::to_string(studyDirs.size()).length());
+    ++anonymizer.m_count_width;
+    /* increment m_count_width by 1 for always at least one leading zero in
+    formatted pseudoname:
+
+    studies found: 5 -> string length = 1
+    - normal: width = 1, PSEUDONAME_1, ..., PSEUDONAME_5
+    - incremented: width = 2, PSEUDONAME_01, ..., PSEUDONAME_05
+    */
+
+  } else if (anonymizer.m_pseudoname_type == P_FROM_FILE) {
+    fmt::print("using id-pseudoname pairs from file `{}`\n",
+               opt_pseudonameFile);
+    OFCondition cond = anonymizer.readPseudonamesFromFile(opt_pseudonameFile);
+    if (cond.bad()) {
+      OFLOG_ERROR(mainLogger, cond.text());
+      return cond.code();
+    }
+
+  } else {
+    fmt::print("using pseudonames from random string generation\n");
+  }
+
+  (void)std::filesystem::create_directories(opt_outDirectory);
+  OFLOG_INFO(mainLogger,
+             fmt::format("created output directory `{}`", opt_outDirectory));
+
+  std::ofstream outputAnonymFile{
+      std::string(opt_outDirectory) + "/anonym_output.csv", std::ios::out};
+  outputAnonymFile << "PatientID,PatientName,Pseudoname,StudyDate,"
+                      "OldStudyInstanceUID,NewStudyInstanceUID\n";
 
   for (const auto &study_dir : studyDirs) {
-    fmt::print("Anonymizing study `{}`\n", study_dir.stem().string());
 
     OFCondition cond{};
-    cond = anonymizer.findDicomFiles(study_dir);
-    if (cond.bad()) {
-      continue;
-    }
-
-    if (opt_pseudonameType == P_RANDOM_STRING) {
-      anonymizer.setPseudoname(opt_anonymizedPrefix);
-
-    } else if (opt_pseudonameType == P_INTEGER_ORDER) {
-      anonymizer.setPseudoname(opt_anonymizedPrefix, pseudonameCount,
-                               pseudonameLeadingZeroesWidth);
-      ++pseudonameCount;
-
-    } else if (opt_pseudonameType == P_FROM_FILE) {
-      // TODO: finish reading csv file with pseudonames and assigning
-      anonymizer.setPseudoname(opt_anonymizedPrefix);
-    }
-
-    OFLOG_INFO(mainLogger, "Applying pseudoname " << anonymizer.m_pseudoname);
-
-    anonymizer.m_outputStudyDir =
-        fmt::format("{}/{}", opt_outDirectory, anonymizer.m_pseudoname);
-
-    if (std::filesystem::exists(anonymizer.m_outputStudyDir)) {
-      OFLOG_INFO(mainLogger,
-                 fmt::format("Directory `{}` exists, overwriting files",
-                             anonymizer.m_outputStudyDir)
-                     .c_str());
-    } else {
-      if (std::filesystem::create_directories(anonymizer.m_outputStudyDir +
-                                              "/DICOM"))
-        OFLOG_INFO(mainLogger, fmt::format("Created directory `{}`\n",
-                                           anonymizer.m_outputStudyDir)
-                                   .c_str());
-    }
-    anonymizer.setBasicTags();
-    cond = anonymizer.anonymizeStudy(opt_anonymizationMethods, opt_rootUID);
+    cond = anonymizer.anonymizeStudy(study_dir, opt_outDirectory,
+                                     opt_anonymizationMethods, opt_rootUID);
 
     // something bad happened
     if (cond.bad()) {
-      const std::string msg = fmt::format(
-          "error while anonymizing study: `{}`\n", study_dir.string());
+      const std::string msg =
+          fmt::format("error while anonymizing study `{}`", study_dir.string());
       OFLOG_ERROR(mainLogger, msg.c_str());
       continue;
     }
 
-    writeAllStudyTags(outputAnonymFile, anonymizer);
+    outputAnonymFile << fmt::format(
+        "{},{},{},{},{},{}\n", anonymizer.m_oldID, anonymizer.m_oldName,
+        anonymizer.m_pseudoname, anonymizer.m_studydate,
+        anonymizer.m_old_studyuid, anonymizer.m_new_studyuid);
   }
   outputAnonymFile.close();
 

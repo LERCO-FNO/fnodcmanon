@@ -1,8 +1,6 @@
 //
 // Created by Vojtěch on 18.03.2025.
 //
-// #include <dcmtk/ofstd/ofconsol.h>
-// #include <dcmtk/ofstd/oftypes.h>
 #include <fstream>
 #include <random>
 
@@ -10,8 +8,9 @@
 #include "dcmtk/dcmdata/dctagkey.h"
 #include "dcmtk/dcmdata/dcuid.h"
 #include "dcmtk/oflog/oflog.h"
-
 #include "dcmtk/ofstd/ofcond.h"
+#include "dcmtk/ofstd/ofexit.h"
+
 #include "fmt/format.h"
 
 #include "DicomAnonymizer.hpp"
@@ -63,24 +62,51 @@ StudyAnonymizer::findDicomFiles(const std::filesystem::path &study_directory) {
     return {0, 0, OF_failure, msg.c_str()};
   }
 
-  fmt::print("Found {} files\n", m_dicom_files.size());
+  fmt::print("Anonymizing study `{}`, {} dicom files\n",
+             study_directory.stem().string(), m_dicom_files.size());
   return EC_Normal;
 }
 
-OFCondition
-StudyAnonymizer::anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
-                                const char *root) {
+OFCondition StudyAnonymizer::anonymizeStudy(
+    const std::filesystem::path &study_directory, const char *output_directory,
+    const std::set<E_ADDIT_ANONYM_METHODS> &methods, const char *uid_root) {
 
   OFCondition cond{};
 
+  cond = this->findDicomFiles(study_directory);
+  if (cond.bad()) {
+    OFLOG_WARN(mainLogger, cond.text());
+    return cond;
+  }
+
+  cond = this->setBasicTags();
+
   char newStudyUID[65];
-  dcmGenerateUniqueIdentifier(newStudyUID, root);
+  dcmGenerateUniqueIdentifier(newStudyUID, uid_root);
+  m_new_studyuid = OFString(newStudyUID);
+
+  this->setPseudoname();
+
+  OFLOG_INFO(mainLogger, "applying pseudoname " << m_pseudoname);
+
+  m_outputStudyDir = fmt::format("{}/{}", output_directory, m_pseudoname);
+
+  if (std::filesystem::exists(m_outputStudyDir)) {
+    OFLOG_INFO(mainLogger,
+               fmt::format("directory `{}` exists, overwriting files",
+                           m_outputStudyDir)
+                   .c_str());
+  } else {
+    std::filesystem::create_directories(m_outputStudyDir + "/DICOM");
+    OFLOG_INFO(mainLogger, "created directory `" << m_outputStudyDir << "`");
+  }
+  // fmt::format("Created directory `{}`\n", m_outputStudyDir).c_str()
 
   int fileNumber{0};
   for (const auto &file : m_dicom_files) {
     OFCondition cond = m_fileformat.loadFile(file.c_str());
     if (cond.bad()) {
-      OFLOG_ERROR(mainLogger, "Unable to load file " << file.c_str());
+      OFLOG_ERROR(mainLogger, "unable to load file " << file.c_str());
       OFLOG_ERROR(mainLogger, cond.text());
       return cond;
     }
@@ -97,7 +123,7 @@ StudyAnonymizer::anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
 
     // Retain Patient Characteristics Option
     if (methods.contains(M_113108)) {
-      // clean patient characteristics tags, others are kept as is
+      // clean some patient characteristics tags, others are kept as is
       m_dataset->putAndInsertString(DCM_Allergies, "");
       m_dataset->putAndInsertString(DCM_PatientState, "");
       m_dataset->putAndInsertString(DCM_PreMedication, "");
@@ -118,11 +144,12 @@ StudyAnonymizer::anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
     const char *oldSeriesUID{nullptr};
     m_dataset->findAndGetString(DCM_SeriesInstanceUID, oldSeriesUID);
 
-    const std::string newSeriesUID = this->getSeriesUids(oldSeriesUID, root);
+    const std::string newSeriesUID =
+        this->getSeriesUids(oldSeriesUID, uid_root);
     m_dataset->putAndInsertString(DCM_SeriesInstanceUID, newSeriesUID.c_str());
 
     char newSOPInstanceUID[65];
-    dcmGenerateUniqueIdentifier(newSOPInstanceUID, root);
+    dcmGenerateUniqueIdentifier(newSOPInstanceUID, uid_root);
     m_dataset->putAndInsertOFStringArray(DCM_SOPInstanceUID, newSOPInstanceUID);
 
     m_dataset->putAndInsertOFStringArray(DCM_StudyInstanceUID, newStudyUID);
@@ -130,28 +157,30 @@ StudyAnonymizer::anonymizeStudy(const std::set<E_ADDIT_ANONYM_METHODS> &methods,
     cond = this->removeInvalidTags();
 
     if (cond.bad()) {
-      OFLOG_ERROR(mainLogger, "Error occured while removing invalid tags");
+      OFLOG_ERROR(mainLogger, "error occured while removing invalid tags");
       return cond;
     }
     const E_TransferSyntax xfer = m_dataset->getCurrentXfer();
     m_dataset->chooseRepresentation(xfer, nullptr);
     m_fileformat.loadAllDataIntoMemory();
 
-    std::string outputName{};
+    std::string outputFilename{};
     if (m_filenameType == F_HEX) {
-      outputName = fmt::format("{:08X}", fileNumber);
+      outputFilename = fmt::format("{:08X}", fileNumber);
     } else if (m_filenameType == F_MODALITY_SOPINSTUID) {
       const char *modality;
       m_dataset->findAndGetString(DCM_Modality, modality);
-      outputName = fmt::format("{}{}", modality, newSOPInstanceUID);
+      outputFilename = fmt::format("{}{}", modality, newSOPInstanceUID);
     }
     const std::string outputPath =
-        fmt::format("{}/DICOM/{}", m_outputStudyDir, outputName);
+        fmt::format("{}/DICOM/{}", m_outputStudyDir, outputFilename);
     cond = m_fileformat.saveFile(outputPath.c_str(), xfer);
 
     if (cond.bad()) {
-      fmt::print("Unable to save file {}\n", file);
-      fmt::print("Reason: {}\n", cond.text());
+      OFLOG_ERROR(mainLogger, "unable to save file `" << file << "`");
+      OFLOG_ERROR(mainLogger, cond.text());
+      // fmt::print("Unable to save file {}\n", file);
+      // fmt::print("Reason: {}\n", cond.text());
       return cond;
     }
     ++fileNumber;
@@ -227,18 +256,27 @@ void StudyAnonymizer::anonymizeDeviceProfile() {
   m_dataset->findAndDeleteElement(DCM_StationName);
 };
 
-void StudyAnonymizer::setPseudoname(const char *prefix) {
-  m_pseudoname = fmt::format("{}{}", prefix, generate_random_string());
-};
+void StudyAnonymizer::setPseudoname() {
 
-void StudyAnonymizer::setPseudoname(const char *prefix, int count,
-                                    int count_width) {
-  m_pseudoname = fmt::format("{0}{1:0{2}}", prefix, count, count_width);
-};
+  if (m_pseudoname_type == P_RANDOM_STRING) {
+    m_pseudoname =
+        fmt::format("{}{}", m_pseudoname_prefix, generate_random_string());
+  } else if (m_pseudoname_type == P_INTEGER_ORDER) {
+    m_pseudoname = fmt::format("{0}{1:0{2}}", m_pseudoname_prefix,
+                               m_study_count, m_count_width);
+    ++m_study_count;
+  } else if (m_pseudoname_type == P_FROM_FILE) {
+    if (m_id_pseudoname_map.contains(m_oldID)) {
+      m_pseudoname = fmt::format("{}{}", m_pseudoname_prefix,
+                                 m_id_pseudoname_map[m_oldID]);
+      return;
+    }
 
-void StudyAnonymizer::setPseudoname(const char *prefix,
-                                    const std::string &pseudoname) {
-
+    m_pseudoname = fmt::format("{}_{}", "UN", generate_random_string());
+    OFLOG_WARN(mainLogger, "id `" << m_oldID << "` not in id-pseudoname file");
+    OFLOG_WARN(mainLogger, "generated random string instead `"
+                               << m_oldID << "` -> `" << m_pseudoname << "`");
+  }
 };
 
 std::string StudyAnonymizer::getSeriesUids(const std::string &old_series_uid,
@@ -250,7 +288,6 @@ std::string StudyAnonymizer::getSeriesUids(const std::string &old_series_uid,
     char uid[65];
     dcmGenerateUniqueIdentifier(uid, root);
     m_series_uids[old_series_uid] = std::string(uid);
-    return m_series_uids[old_series_uid];
   }
 
   return m_series_uids[old_series_uid];
@@ -283,7 +320,7 @@ OFCondition StudyAnonymizer::removeInvalidTags() const {
 OFCondition StudyAnonymizer::setBasicTags() {
   OFCondition cond = m_fileformat.loadFile(m_dicom_files[0].c_str());
   if (cond.bad()) {
-    OFLOG_ERROR(mainLogger, "Unable to load file " << m_dicom_files[0].c_str());
+    OFLOG_ERROR(mainLogger, "unable to load file " << m_dicom_files[0].c_str());
     OFLOG_ERROR(mainLogger, cond.text());
     return cond;
   }
@@ -298,6 +335,41 @@ OFCondition StudyAnonymizer::setBasicTags() {
   return cond;
 }
 
+OFCondition
+StudyAnonymizer::readPseudonamesFromFile(const std::string &filename) {
+  OFCondition cond{};
+
+  std::ifstream file{filename, std::ios::in};
+  if (!file.is_open()) {
+    OFCondition cond{0, EXITCODE_CANNOT_READ_INPUT_FILE, OF_error,
+                     "error reading file with pseudonames"};
+    OFLOG_ERROR(mainLogger, cond.text());
+    return cond;
+  }
+
+  std::string line{};
+  while (std::getline(file, line)) {
+
+    std::size_t delimiter_pos = line.find(',');
+    std::string patient_id = line.substr(0, delimiter_pos);
+    const std::string pseudoname = line.substr(delimiter_pos + 1);
+
+    // correct PatientID formatting
+    std::erase(patient_id, '/');
+    std::erase_if(patient_id, ::isalpha);
+
+    if (!m_id_pseudoname_map.contains(patient_id)) {
+      m_id_pseudoname_map.emplace(patient_id, pseudoname);
+    }
+  }
+  file.close();
+  OFLOG_INFO(mainLogger,
+             "found " << static_cast<unsigned int>(m_id_pseudoname_map.size())
+                      << " patient_id-pseudoname pairs to apply");
+
+  return cond;
+};
+
 OFCondition StudyAnonymizer::writeTags() const {
   std::ofstream csvfile{m_outputStudyDir + "/tags.csv", std::ios::out};
   if (!csvfile.is_open()) {
@@ -310,5 +382,5 @@ OFCondition StudyAnonymizer::writeTags() const {
                          m_old_studyuid, m_studydate);
 
   csvfile.close();
-  return {EC_Normal};
+  return EC_Normal;
 };
