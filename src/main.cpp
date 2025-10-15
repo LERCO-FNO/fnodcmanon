@@ -31,7 +31,8 @@ void checkConflict(OFConsoleApplication &app, const char *first_opt,
   app.printError(str.c_str(), EXITCODE_COMMANDLINE_SYNTAX_ERROR);
 };
 
-std::vector<std::filesystem::path> findStudyDirectories(const char *root_path) {
+std::vector<std::filesystem::path>
+findStudyDirectories(const OFString &root_path) {
   std::vector<std::filesystem::path> dirs{};
 
   for (const auto &entry : std::filesystem::directory_iterator(root_path)) {
@@ -40,28 +41,6 @@ std::vector<std::filesystem::path> findStudyDirectories(const char *root_path) {
     }
   }
   return dirs;
-};
-
-int getPseudonameLeadingZeroesWidth(const char *opt_inDirectory) {
-  int studyCount{0};
-  for (const auto &studyDir :
-       std::filesystem::directory_iterator(opt_inDirectory)) {
-    if (!studyDir.is_directory()) {
-      OFLOG_WARN(mainLogger, fmt::format("Invalid path, not directory `{}`",
-                                         studyDir.path().string())
-                                 .c_str());
-      continue;
-    }
-
-    if (studyDir.path().empty()) {
-      OFLOG_WARN(mainLogger, fmt::format("Invalid directory, is empty `{}`",
-                                         studyDir.path().string())
-                                 .c_str());
-      continue;
-    }
-    ++studyCount;
-  }
-  return static_cast<int>(std::to_string(studyCount).length());
 };
 
 void printMethods() {
@@ -107,20 +86,17 @@ int main(int argc, char *argv[]) {
   OFCommandLine cmd;
 
   // required params
-  // FIXME: replace with OFString
-  const char *opt_inDirectory{nullptr};
-  OFString opt_anonymizedPrefix{};
+  std::string opt_inDirectory{};
 
   // optional params
-  // FIXME: replace with OFString
-  const char *FNO_UID_ROOT{"1.2.840.113619.2"};
-  const char *opt_outDirectory{"./anonymized_output"};
-  const char *opt_rootUID{FNO_UID_ROOT};
+  std::string opt_anonymizedPrefix{};
+  std::string FNO_UID_ROOT{"1.2.840.113619.2"};
+  std::string opt_outDirectory{"./anonymized_output"};
+  std::string opt_rootUID{FNO_UID_ROOT};
 
+  // optional pseudoname params
   E_PSEUDONAME_TYPE opt_pseudonameType = P_RANDOM_STRING;
-
-  // FIXME: replace with OFString
-  const char *opt_pseudonameFile{nullptr};
+  std::string opt_pseudonameFile{};
 
   E_FILENAMES opt_filenameType = F_HEX;
   std::set<E_ADDIT_ANONYM_METHODS> opt_anonymizationMethods{};
@@ -129,9 +105,6 @@ int main(int argc, char *argv[]) {
   constexpr int SHORTCOL{4};
   cmd.setParamColumn(LONGCOL + SHORTCOL + 4);
   cmd.addParam("in-directory", "input directory with DICOM studies");
-  // cmd.addParam(
-  //     "anonymized-prefix",
-  //     "pseudoname prefix overwriting DICOM tags PatientID, PatientName");
 
   cmd.setOptionColumns(LONGCOL, SHORTCOL);
   cmd.addGroup("general options:", LONGCOL, SHORTCOL + 2);
@@ -276,21 +249,19 @@ int main(int argc, char *argv[]) {
 
   if (std::filesystem::exists(opt_inDirectory)) {
     if (!std::filesystem::is_directory(opt_inDirectory)) {
-      OFLOG_ERROR(mainLogger, fmt::format("invalid path, not directory `{}`",
-                                          opt_inDirectory));
+      OFLOG_ERROR(mainLogger,
+                  "invalid path, not directory `" << opt_inDirectory << "`");
       return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
 
     if (std::filesystem::is_empty(opt_inDirectory)) {
       OFLOG_ERROR(mainLogger,
-                  fmt::format("invalid directory, empty directory `{}`",
-                              opt_inDirectory));
+                  "invalid path, empty directory `" << opt_inDirectory << "`");
       return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
     }
   } else {
-    OFLOG_ERROR(
-        mainLogger,
-        fmt::format("invalid path, directory not found `{}`", opt_inDirectory));
+    OFLOG_ERROR(mainLogger, "invalid path, directory not found `"
+                                << opt_inDirectory << "`");
     return EXITCODE_COMMANDLINE_SYNTAX_ERROR;
   }
 
@@ -330,8 +301,8 @@ int main(int argc, char *argv[]) {
   OFLOG_INFO(mainLogger,
              fmt::format("created output directory `{}`", opt_outDirectory));
 
-  std::ofstream outputAnonymFile{
-      std::string(opt_outDirectory) + "/anonym_output.csv", std::ios::out};
+  std::ofstream outputAnonymFile{opt_outDirectory + "/anonym_output.csv",
+                                 std::ios::out};
   outputAnonymFile << "PatientID,PatientName,Pseudoname,StudyDate,"
                       "OldStudyInstanceUID,NewStudyInstanceUID\n";
 
@@ -350,8 +321,8 @@ int main(int argc, char *argv[]) {
     }
 
     outputAnonymFile << fmt::format(
-        "{},{},{},{},{},{}\n", anonymizer.m_oldID, anonymizer.m_oldName,
-        anonymizer.m_pseudoname, anonymizer.m_studydate,
+        "{},{},{},{},{},{}\n", anonymizer.m_old_id, anonymizer.m_old_name,
+        anonymizer.m_pseudoname, anonymizer.m_study_date,
         anonymizer.m_old_studyuid, anonymizer.m_new_studyuid);
   }
   outputAnonymFile.close();

@@ -34,20 +34,20 @@ enum E_PSEUDONAME_TYPE { P_RANDOM_STRING, P_INTEGER_ORDER, P_FROM_FILE };
 class StudyAnonymizer {
 public:
   StudyAnonymizer() = default;
-  StudyAnonymizer(const OFString &pseudoname_prefix,
+  StudyAnonymizer(const std::string &pseudoname_prefix,
                   E_PSEUDONAME_TYPE pseudoname_type = P_RANDOM_STRING,
                   E_FILENAMES filename_type = F_HEX)
       : m_pseudoname_prefix{pseudoname_prefix},
-        m_pseudoname_type{pseudoname_type}, m_filenameType{filename_type} {};
+        m_pseudoname_type{pseudoname_type}, m_filename_type{filename_type} {};
 
   ~StudyAnonymizer() = default;
 
   OFCondition findDicomFiles(const std::filesystem::path &study_directory);
 
   OFCondition anonymizeStudy(const std::filesystem::path &study_directory,
-                             const char *output_directory,
+                             const std::string &output_directory,
                              const std::set<E_ADDIT_ANONYM_METHODS> &methods,
-                             const char *uid_root = nullptr);
+                             const std::string &uid_root);
   void anonymizeBasicProfile();
   void anonymizePatientCharacteristicsProfile();
   void anonymizeInstitutionProfile();
@@ -62,22 +62,22 @@ public:
   OFCondition setBasicTags();
   OFCondition writeTags() const;
 
-  E_FILENAMES m_filenameType{F_HEX};
+  E_FILENAMES m_filename_type{F_HEX};
   E_PSEUDONAME_TYPE m_pseudoname_type{P_RANDOM_STRING};
   unsigned int m_study_count{1};
   unsigned short m_count_width{2};
   std::string m_pseudoname_prefix{};
 
   std::string m_pseudoname{};
-  OFString m_oldName{};
-  OFString m_oldID{};
-  OFString m_old_studyuid{};
-  OFString m_new_studyuid{};
-  OFString m_studydate{};
-  std::string m_outputStudyDir{};
+  std::string m_old_name{};
+  std::string m_old_id{};
+  std::string m_old_studyuid{};
+  std::string m_new_studyuid{};
+  std::string m_study_date{};
+  std::string m_output_study_dir{};
 
 private:
-  int m_numberOfFiles{0};
+  int m_number_of_files{0};
   std::vector<std::string> m_dicom_files{};
   std::unordered_map<std::string, std::string>
       m_series_uids{}; // unordered_map[old_uid, new_uid]
