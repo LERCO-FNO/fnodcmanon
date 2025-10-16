@@ -62,50 +62,53 @@ StudyAnonymizer::findDicomFiles(const std::filesystem::path &study_directory) {
     return {0, 0, OF_failure, msg.c_str()};
   }
 
-  fmt::print("Anonymizing study `{}`, {} dicom files\n",
-             study_directory.stem().string(), m_dicom_files.size());
   return EC_Normal;
 }
 
-OFCondition
-StudyAnonymizer::anonymizeStudy(const std::filesystem::path &study_directory,
-                                const std::string &output_directory,
-                                const std::set<E_ADDIT_ANONYM_METHODS> &methods,
-                                const std::string &uid_root) {
+OFCondition StudyAnonymizer::anonymizeStudy(
+    const std::filesystem::path &input_study_directory,
+    const std::string &output_directory,
+    const std::set<E_ADDIT_ANONYM_METHODS> &methods,
+    const std::string &uid_root) {
 
   OFCondition cond{};
 
-  cond = this->findDicomFiles(study_directory);
+  cond = this->findDicomFiles(input_study_directory);
   if (cond.bad()) {
-    OFLOG_WARN(mainLogger, cond.text());
+    OFLOG_ERROR(mainLogger, "error while searching dicom files");
+    OFLOG_ERROR(mainLogger, cond.text());
     return cond;
   }
 
   cond = this->setBasicTags();
 
+  fmt::print("\nanonymizing study {}, {} dicom files\n", m_old_id,
+             m_dicom_files.size());
+
   char newStudyUID[65];
   dcmGenerateUniqueIdentifier(newStudyUID, uid_root.c_str());
   m_new_studyuid = OFString(newStudyUID);
 
+  OFLOG_INFO(mainLogger, "replacing StudyInstanceUID (old) " << m_old_studyuid
+                                                             << " with (new) "
+                                                             << m_new_studyuid);
+
   this->setPseudoname();
 
-  OFLOG_INFO(mainLogger, "applying pseudoname " << m_pseudoname);
+  fmt::print("applying pseudoname {} to ID {}\n", m_pseudoname, m_old_id);
 
   m_output_study_dir = fmt::format("{}/{}", output_directory, m_pseudoname);
 
   if (std::filesystem::exists(m_output_study_dir)) {
-    OFLOG_INFO(mainLogger,
-               fmt::format("directory `{}` exists, overwriting files",
-                           m_output_study_dir)
-                   .c_str());
+    OFLOG_INFO(mainLogger, "directory `" << m_output_study_dir
+                                         << "` exists, overwriting files");
   } else {
     std::filesystem::create_directories(m_output_study_dir + "/DICOM");
     OFLOG_INFO(mainLogger, "created directory `" << m_output_study_dir << "`");
   }
 
-  int fileNumber{0};
   for (const auto &file : m_dicom_files) {
-    OFCondition cond = m_fileformat.loadFile(file.c_str());
+    OFCondition cond = m_fileformat.loadFile(file);
     if (cond.bad()) {
       OFLOG_ERROR(mainLogger, "unable to load file " << file.c_str());
       OFLOG_ERROR(mainLogger, cond.text());
@@ -157,36 +160,20 @@ StudyAnonymizer::anonymizeStudy(const std::filesystem::path &study_directory,
 
     cond = this->removeInvalidTags();
 
-    if (cond.bad()) {
-      OFLOG_ERROR(mainLogger, "error occured while removing invalid tags");
-      return cond;
-    }
-    const E_TransferSyntax xfer = m_dataset->getCurrentXfer();
-    m_dataset->chooseRepresentation(xfer, nullptr);
-    m_fileformat.loadAllDataIntoMemory();
-
-    std::string outputFilename{};
-    if (m_filename_type == F_HEX) {
-      outputFilename = fmt::format("{:08X}", fileNumber);
-    } else if (m_filename_type == F_MODALITY_SOPINSTUID) {
-      std::string modality;
-      m_dataset->findAndGetOFString(DCM_Modality, modality);
-      outputFilename = fmt::format("{}{}", modality, newSOPInstanceUID);
-    }
-    const std::string outputPath =
-        fmt::format("{}/DICOM/{}", m_output_study_dir, outputFilename);
-    cond = m_fileformat.saveFile(outputPath.c_str(), xfer);
+    cond = this->writeDicomFile();
 
     if (cond.bad()) {
-      OFLOG_ERROR(mainLogger, "unable to save file `" << file << "`");
+      OFLOG_ERROR(mainLogger, "error while processing study `"
+                                  << input_study_directory.stem().string()
+                                  << "`, skipping to next study");
       OFLOG_ERROR(mainLogger, cond.text());
       return cond;
     }
-    ++fileNumber;
   }
 
-  // this->writeTags();
-
+  // TODO: add in future?
+  //  this->writeTags();
+  fmt::print("finished anonymization of {}\n", m_old_id);
   return cond;
 }
 
@@ -271,10 +258,11 @@ void StudyAnonymizer::setPseudoname() {
       return;
     }
 
-    m_pseudoname = fmt::format("{}_{}", "UN", generate_random_string());
-    OFLOG_WARN(mainLogger, "id `" << m_old_id << "` not in id-pseudoname file");
-    OFLOG_WARN(mainLogger, "generated random string instead `"
-                               << m_old_id << "` -> `" << m_pseudoname << "`");
+    m_pseudoname = fmt::format("{}{}_{}", m_pseudoname_prefix, "UN",
+                               generate_random_string());
+    OFLOG_WARN(mainLogger, "ID " << m_old_id << " not in ID-pseudoname file");
+    OFLOG_WARN(mainLogger, "generated random string instead "
+                               << m_old_id << " -> " << m_pseudoname);
   }
 };
 
@@ -311,6 +299,10 @@ OFCondition StudyAnonymizer::removeInvalidTags() const {
       m_dataset->findAndDeleteElement(tagKey);
       --i; // decrement due to deleting total number of tags
     }
+  }
+
+  if (cond.bad()) {
+    OFLOG_ERROR(mainLogger, "error while removing invalid tags");
   }
 
   return cond;
@@ -366,6 +358,37 @@ StudyAnonymizer::readPseudonamesFromFile(const std::string &filename) {
              "found " << static_cast<unsigned int>(m_id_pseudoname_map.size())
                       << " patient_id-pseudoname pairs to apply");
 
+  return cond;
+};
+
+OFCondition StudyAnonymizer::writeDicomFile() {
+  OFCondition cond{};
+
+  const E_TransferSyntax xfer = m_dataset->getCurrentXfer();
+  m_dataset->chooseRepresentation(xfer, nullptr);
+  m_fileformat.loadAllDataIntoMemory();
+
+  std::string path = fmt::format("{}/DICOM/", m_output_study_dir);
+  switch (m_filename_type) {
+  case F_HEX:
+    path += fmt::format("{:08X}", m_files_processed);
+    ++m_files_processed;
+    break;
+  case F_MODALITY_SOPINSTUID: {
+    std::string modality{}, sopInstanceUid{};
+    m_dataset->findAndGetOFString(DCM_Modality, modality);
+    m_dataset->findAndGetOFString(DCM_SOPInstanceUID, sopInstanceUid);
+    path += fmt::format("{}{}", modality, sopInstanceUid);
+    break;
+  }
+  }
+
+  cond = m_fileformat.saveFile(path, xfer);
+
+  if (cond.bad()) {
+    OFLOG_ERROR(mainLogger, "error writing file `" << path << "`");
+    OFLOG_ERROR(mainLogger, cond.text());
+  }
   return cond;
 };
 

@@ -60,6 +60,7 @@ public:
   OFCondition readPseudonamesFromFile(const std::string &filename);
   OFCondition removeInvalidTags() const;
   OFCondition setBasicTags();
+  OFCondition writeDicomFile();
   OFCondition writeTags() const;
 
   E_FILENAMES m_filename_type{F_HEX};
@@ -77,7 +78,7 @@ public:
   std::string m_output_study_dir{};
 
 private:
-  int m_number_of_files{0};
+  unsigned int m_files_processed{0};
   std::vector<std::string> m_dicom_files{};
   std::unordered_map<std::string, std::string>
       m_series_uids{}; // unordered_map[old_uid, new_uid]
