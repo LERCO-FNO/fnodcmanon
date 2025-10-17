@@ -9,7 +9,7 @@
 #include "fmt/format.h"
 
 #include "dcmtk/dcmdata/cmdlnarg.h"
-#include "dcmtk/dcmdata/dctk.h"
+#include "dcmtk/dcmdata/dcuid.h"
 #include "dcmtk/oflog/oflog.h"
 #include "dcmtk/ofstd/ofconapp.h"
 #include "dcmtk/ofstd/ofcond.h"
@@ -147,6 +147,7 @@ int main(int argc, char *argv[]) {
       fmt::format("use FNO UID root: {} (default)", FNO_UID_ROOT).c_str());
   cmd.addOption("--offis-uid-root", "-ouid",
                 "use OFFIS UID root: " OFFIS_UID_ROOT);
+
   cmd.addOption("--custom-uid-root", "-cuid", 1, "uid root: string",
                 "use custom UID root");
 
@@ -285,7 +286,7 @@ int main(int argc, char *argv[]) {
     */
 
   } else if (anonymizer.m_pseudoname_type == P_FROM_FILE) {
-    fmt::print("using id-pseudoname pairs from file `{}`\n",
+    fmt::print("using PatientID-pseudoname pairs from file `{}`\n",
                opt_pseudonameFile);
     OFCondition cond = anonymizer.readPseudonamesFromFile(opt_pseudonameFile);
     if (cond.bad()) {

@@ -260,7 +260,8 @@ void StudyAnonymizer::setPseudoname() {
 
     m_pseudoname = fmt::format("{}{}_{}", m_pseudoname_prefix, "UN",
                                generate_random_string());
-    OFLOG_WARN(mainLogger, "ID " << m_old_id << " not in ID-pseudoname file");
+    OFLOG_WARN(mainLogger,
+               "ID " << m_old_id << " not in PatientID-pseudoname file");
     OFLOG_WARN(mainLogger, "generated random string instead "
                                << m_old_id << " -> " << m_pseudoname);
   }
@@ -341,6 +342,7 @@ StudyAnonymizer::readPseudonamesFromFile(const std::string &filename) {
   std::string line{};
   while (std::getline(file, line)) {
 
+    std::erase_if(line, ::isspace);
     const std::size_t delimiter_pos = line.find(',');
     std::string patient_id = line.substr(0, delimiter_pos);
     const std::string pseudoname = line.substr(delimiter_pos + 1);
@@ -356,7 +358,7 @@ StudyAnonymizer::readPseudonamesFromFile(const std::string &filename) {
   file.close();
   OFLOG_INFO(mainLogger,
              "found " << static_cast<unsigned int>(m_id_pseudoname_map.size())
-                      << " patient_id-pseudoname pairs to apply");
+                      << " PatientID-pseudoname pairs to apply");
 
   return cond;
 };
