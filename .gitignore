@@ -6,6 +6,7 @@
 CMakePresets.json
 
 # build files
+build/
 build-*/
 cmake-build-debug/
 cmake-build-release/

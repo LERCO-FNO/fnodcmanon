@@ -17,3 +17,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
                       fmt::fmt
                       DCMTK::DCMTK)
+
+if (MINGW AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "building release with static c++ libs")
+    target_link_libraries(${PROJECT_NAME} PRIVATE -static)
+endif()
