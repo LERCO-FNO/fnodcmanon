@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
-project(fnodcmanon LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+project(fnodcmanon LANGUAGES CXX)
 
 find_package(fmt REQUIRED)
 find_package(DCMTK REQUIRED)
@@ -18,7 +16,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
                       fmt::fmt
                       DCMTK::DCMTK)
 
-if (MINGW AND CMAKE_BUILD_TYPE STREQUAL "Release")
-    message(STATUS "building release with static c++ libs")
-    target_link_libraries(${PROJECT_NAME} PRIVATE -static)
-endif()
+set_target_properties(${PROJECT_NAME} PROPERTIES DEBUG_POSTFIX d)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE $<$<AND:$<BOOL:${MINGW}>,$<CONFIG:Release>>:-static>)
+
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
