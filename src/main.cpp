@@ -55,15 +55,15 @@ void printMethods() {
                    "Basic Application Confidentiality Profile (DCM_113100)",
                    "basic tags: PatientName, PatientID, PatientSex, "
                    "physician tags, ..."},
-      AnonProfiles{"--profile-patient-tags",
+      AnonProfiles{"--retain-patient-charac-tags",
                    "Retain Patient Characteristics Option (DCM_113108)",
                    "optional patient tags: PatientAge, "
                    "PatientWeight, SmokingStatus, ..."},
-      AnonProfiles{"--profile-device-tags",
+      AnonProfiles{"--retain-device-tags",
                    "Retain Device Identity Option (DCM_113109)",
                    "device tags: DeviceLabel, StationName, ..."},
       AnonProfiles{
-          "--profile-institution-tags",
+          "--retain-institution-tags",
           "Retain Institution Identity Option (DCM_113112)",
           "institution tags: InstitutionAddress, InstitutionName, ..."}};
 
@@ -74,30 +74,29 @@ void printMethods() {
 
 int main(int argc, char *argv[]) {
   constexpr auto FNO_CONSOLE_APPLICATION{"fnodcmanon"};
-  constexpr auto APP_VERSION{"0.4.2"};
+  constexpr auto APP_VERSION{"0.5.0"};
   constexpr auto RELEASE_DATE{"2024-11-19"};
   const std::string rcsid = fmt::format(
-      "${}: ver. {} rel. {}\n$dcmtk: ver. {} rel.{}", FNO_CONSOLE_APPLICATION,
+      "${}: ver. {} rel. {}\n$dcmtk: ver. {} rel. {}", FNO_CONSOLE_APPLICATION,
       APP_VERSION, RELEASE_DATE, OFFIS_DCMTK_VERSION, OFFIS_DCMTK_RELEASEDATE);
 
   setupLogger(fmt::format("fno.apps.{}", FNO_CONSOLE_APPLICATION));
-  OFConsoleApplication app(FNO_CONSOLE_APPLICATION, "DICOM anonymization tool",
-                           rcsid.c_str());
-  OFCommandLine cmd;
+  OFConsoleApplication app{FNO_CONSOLE_APPLICATION, "DICOM anonymization tool",
+                           rcsid.c_str()};
+  OFCommandLine cmd{};
 
   // required params
   std::string opt_inDirectory{};
 
-  // optional params
-  std::string opt_anonymizedPrefix{};
-  std::string FNO_UID_ROOT{"1.2.840.113619.2"};
-  std::string opt_outDirectory{"./anonymized_output"};
-  std::string opt_rootUID{FNO_UID_ROOT};
-
   // optional pseudoname params
+  std::string opt_anonymizedPrefix{};
   E_PSEUDONAME_TYPE opt_pseudonameType = P_RANDOM_STRING;
   std::string opt_pseudonameFile{};
 
+  // optional output methods
+  std::string opt_outDirectory{"./anonymized_output"};
+  std::string FNO_UID_ROOT{"1.2.840.113619.2"};
+  std::string opt_rootUID{FNO_UID_ROOT};
   E_FILENAMES opt_filenameType = F_HEX;
   std::set<E_ADDIT_ANONYM_METHODS> opt_anonymizationMethods{};
 
@@ -116,7 +115,7 @@ int main(int argc, char *argv[]) {
   OFLog::addOptions(cmd);
 
   cmd.addGroup("anonymization options:");
-  cmd.addOption("--prefix", "-p", 1, "string: prefix (default `UN`)",
+  cmd.addOption("--prefix", "-p", 1, "string: prefix (default ``)",
                 "pseudoname prefix to use for constructing pseudonames");
   cmd.addSubGroup("pseudoname suffix options:");
   cmd.addOption("--pseudoname-random", "-pr",
@@ -130,12 +129,12 @@ int main(int argc, char *argv[]) {
       "--pseudoname-file", "-pf", 1, "file: path/to/.csv",
       "read .csv with existing pseudonames and append to <anonymized-prefix>");
 
-  cmd.addSubGroup("anonymization profiles:");
-  cmd.addOption("--profile-patient-tags", "-ppt",
+  cmd.addSubGroup("additional anonymization profiles:");
+  cmd.addOption("--retain-patient-charac-tags", "-rpt",
                 "retain patient characteristics option");
-  cmd.addOption("--profile-device-tags", "-pdt",
+  cmd.addOption("--retain-device-tags", "-rdt",
                 "retain device identity option");
-  cmd.addOption("--profile-institution-tags", "-pit",
+  cmd.addOption("--retain-institution-tags", "-rit",
                 "retain institution identity option");
   cmd.addOption("--print-anon-profiles",
                 "print deidentification profiles for example tags",
@@ -233,15 +232,15 @@ int main(int argc, char *argv[]) {
       opt_filenameType = F_MODALITY_SOPINSTUID;
     cmd.endOptionBlock();
 
-    if (cmd.findOption("--profile-patient-tags")) {
+    if (cmd.findOption("--retain-patient-charac-tags")) {
       opt_anonymizationMethods.insert(E_ADDIT_ANONYM_METHODS::M_113108);
     }
 
-    if (cmd.findOption("--profile-device-tags")) {
+    if (cmd.findOption("--retain-device-tags")) {
       opt_anonymizationMethods.insert(E_ADDIT_ANONYM_METHODS::M_113109);
     }
 
-    if (cmd.findOption("--profile-institution-tags")) {
+    if (cmd.findOption("--retain-institution-tags")) {
       opt_anonymizationMethods.insert(E_ADDIT_ANONYM_METHODS::M_113112);
     }
 
@@ -302,7 +301,12 @@ int main(int argc, char *argv[]) {
   OFLOG_INFO(mainLogger,
              fmt::format("created output directory `{}`", opt_outDirectory));
 
-  std::ofstream outputAnonymFile{opt_outDirectory + "/anonym_output.csv",
+  std::string csvFilename{"anonym_output.csv"};
+  if (!opt_anonymizedPrefix.empty()) {
+    csvFilename.insert(0, opt_anonymizedPrefix);
+  }
+
+  std::ofstream outputAnonymFile{opt_outDirectory + '/' + csvFilename,
                                  std::ios::out};
   outputAnonymFile << "PatientID,PatientName,Pseudoname,StudyDate,"
                       "OldStudyInstanceUID,NewStudyInstanceUID\n";
