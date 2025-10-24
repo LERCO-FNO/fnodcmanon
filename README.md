@@ -9,11 +9,11 @@ De-identification is based on methods explained in [PS3.16 2025a](https://dicom.
 fnodcmanon in-directory [options]
 ```
 #### Pseudoname options:
-`--prefix` (`-p`): set pseudoname prefix eg. TS_, AN, , ...  
+* `--prefix` (`-p`): set pseudoname prefix eg. TS_, AN, , ...  
 
-`--pseudoname-random` (`-pr`) (default): to apply randomly generated string from a-z, A-Z, 0-9, including duplicate characters  
-`--pseudoname-integer` (`-pi`): to apply increasing integer counter starting at 1  
-`--pseudoname-file <path/to/file>` (`-pf`): to apply pseudonames from .csv/.txt file with `PatientID,Pseudoname` pairs:
+* `--pseudoname-random` (`-pr`) (default): to apply randomly generated string from a-z, A-Z, 0-9, including duplicate characters  
+* `--pseudoname-integer` (`-pi`): to apply increasing integer counter starting at 1  
+* `--pseudoname-file <path/to/file>` (`-pf`): to apply pseudonames from .csv/.txt file with `PatientID,Pseudoname` pairs:
 ```
 01,TS_01
 02,TS_02
@@ -21,8 +21,8 @@ fnodcmanon in-directory [options]
 ```
 
 Option `--pseudoname-file` additionally:
-* removes alphabet characters and whitespace
-* assigns randomly generated string if pair is not found
+* removes alphabet characters and whitespace from PatientID column
+* assigns `UN_<random_string>` as pseudoname if corresponding PatientID is not found
 
 #### Anonymization profiles:
 `--retain-patient-charac-tags` (`-rpt`) retain patient characterstic tags - patient age, patient Weight, patient height, ...  
