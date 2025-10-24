@@ -16,3 +16,4 @@ cmake-build-release/
 test_data/
 test_data2/
 test_output/
+test.csv
