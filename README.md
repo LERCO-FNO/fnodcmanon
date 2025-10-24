@@ -9,11 +9,11 @@ De-identification is based on methods explained in [PS3.16 2025a](https://dicom.
 fnodcmanon in-directory [options]
 ```
 #### Pseudoname options:
-* `--prefix` (`-p`): set pseudoname prefix eg. TS_, AN, , ...  
+* `--prefix (-p)`: set pseudoname prefix eg. TS_, AN, , ...  
 
-* `--pseudoname-random` (`-pr`) (default): to apply randomly generated string from a-z, A-Z, 0-9, including duplicate characters  
-* `--pseudoname-integer` (`-pi`): to apply increasing integer counter starting at 1  
-* `--pseudoname-file <path/to/file>` (`-pf`): to apply pseudonames from .csv/.txt file with `PatientID,Pseudoname` pairs:
+* `--pseudoname-random (-pr)` (default): apply randomly generated string from a-z, A-Z, 0-9, including duplicate characters  
+* `--pseudoname-integer (-pi)`: apply incrementing integer counter starting at 1  
+* `--pseudoname-file (-pf) <path/to/file>`: apply pseudonames from \*.csv/\*.txt file containing `PatientID,Pseudoname` pairs:
 ```
 01,TS_01
 02,TS_02
