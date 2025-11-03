@@ -35,4 +35,4 @@ To print out all anonymization profiles use and examples for affected tags, use 
 
 ## Requirements
 * fmt v11.1 or newer
-* dcmtk v3.6.9 or newer
+* dcmtk v3.6.9 or newer, with STL support enabled
